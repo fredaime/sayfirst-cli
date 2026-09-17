@@ -69,6 +69,31 @@ def pytest_pycollect_makemodule(module_path, parent):  # type: ignore[no-untyped
     return ContractAwareModule.from_parent(parent, path=module_path)
 
 
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):  # type: ignore[no-untyped-def]
+    """A fixture that reaches for an absent contract stands its test down, counted."""
+    from contract_absence import standing_down_what_the_contract_stopped
+
+    with standing_down_what_the_contract_stopped(item.nodeid):
+        return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):  # type: ignore[no-untyped-def]
+    """The second moment a test can ask for the contract: while it runs.
+
+    This client imports a command when the verb is dispatched, so a test module
+    that imports only `sayfirst_cli.main` collects on a machine with no contract
+    and then asks for one. Collection cannot see that, and what it cannot see
+    used to arrive as a red run beside a list of politely skipped modules. The
+    rule that decides is `contract_absence.py`'s, unchanged and read from there.
+    """
+    from contract_absence import standing_down_what_the_contract_stopped
+
+    with standing_down_what_the_contract_stopped(item.nodeid):
+        return (yield)
+
+
 def pytest_sessionfinish(session, exitstatus) -> None:  # type: ignore[no-untyped-def]
     """Leave the list of what was not run where `scripts/gate.sh` asked for it."""
     from contract_absence import write_report

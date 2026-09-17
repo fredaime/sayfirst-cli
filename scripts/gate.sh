@@ -22,8 +22,8 @@
 #   SAYFIRST_PYTHON            default 3.13
 #
 # The contract is on no index and cannot be vendored here either (article 14 and
-# `docs/PROVENANCE.md`), so on some machines — a fork's, and this project's own
-# CI until the read credential is set — it is simply not there. This gate does
+# `docs/PROVENANCE.md`), so on some machines — a fork with no network, a runner
+# behind a proxy, anyone offline — it is simply not there. This gate does
 # not treat that as a crash, and does not treat it as a pass. It has three
 # outcomes rather than two, which is article 2's rule about status surfaces
 # applied to the gate's own status:
@@ -45,10 +45,14 @@
 # source is formatted, that it lints, and that the guards reading only this
 # repository's own files still hold.
 #
-# Which tests need the contract is decided by collecting them, never by a list
-# here: `tests/contract_absence.py` holds the rule, this script reads back what
-# it skipped through SAYFIRST_GATE_NOT_RUN, and `tests/test_contract_absence.py`
-# plants the defects against it.
+# Which tests need the contract is decided by watching them ask for it, never by
+# a list here: `tests/contract_absence.py` holds the rule, this script reads back
+# what it stood down through SAYFIRST_GATE_NOT_RUN, and
+# `tests/test_contract_absence.py` plants the defects against it. A test can ask
+# at either of two moments — when its module is imported, and when it runs, since
+# this client imports a command only when the verb is dispatched — and the rule
+# reads both. Reading only the first is what made this gate fail on a machine
+# with no contract instead of reducing on it.
 set -euo pipefail
 
 #: Two of the three outcomes have a status of their own; the third is every

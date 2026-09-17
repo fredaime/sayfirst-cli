@@ -6,9 +6,9 @@
 # run on a machine has to be given. Apart from it, what a contributor runs
 # locally is what decides a merge; a step that exists only here is a step nobody
 # can reproduce, and `tests/test_gate_modes.py` fails if this file grows a
-# second one. The rest of what is written below decides which of the gate's two
-# green outcomes this run reached and renders it, which is a rendering job
-# rather than a check.
+# second one. The rest of what is written below decides which leg of the gate
+# this run is entitled to and renders which of its two green outcomes it
+# reached, which is routing and rendering rather than a check.
 #
 # This workflow publishes nothing. `release.yml` is the only file here that can,
 # and only on a tag; a publish step added here is a constitutional change, not a
@@ -33,9 +33,9 @@
 # text: neither file spells the version, because a version spelled twice is a
 # version that will eventually be spelled two ways.
 #
-# WHY A REDUCED LEG STILL RUNS, AND NOW RUNS ON EVERY RUN. A machine that cannot
-# reach that repository still exists — a fork with no network, a runner behind a
-# proxy, a contributor offline — and what it gets is a contract that is simply
+# WHY A REDUCED LEG STILL EXISTS. A machine that cannot reach that repository
+# still exists — a fork with no network, a runner behind a proxy, a contributor
+# offline — and what it gets is a contract that is simply
 # absent. An absent contract is a fact about the world, not a crash. Article 2
 # says an absence is "never rendered as a negative fact, a zero or a healthy
 # state", so `scripts/gate.sh` has three outcomes and this workflow renders
@@ -57,16 +57,36 @@
 #                                   gate came back reduced, and a reduced job
 #                                   whose gate came back full.
 #
-# The two legs run side by side now, rather than one of them instead of the
-# other. Which leg ran used to be decided by whether this repository held a
-# credential, and that question no longer exists; what is left is a leg that
-# proves the tree against the contract and a leg that proves the reduced path
-# still renders honestly on a machine that has nothing, which is the machine
-# article 16 is about. A reduced run proves nothing about the contract and
-# nothing about the installed dependency closure of articles 13 and 14, and
-# today nothing about this client against a daemon either — the job lists what
-# it did not run, so that sentence is checkable against the run rather than
-# trusted from here.
+# EXACTLY ONE OF THE TWO LEGS RUNS, AND ONE JOB DECIDES WHICH. The first job
+# below asks the world a single question — can this runner read the control
+# plane's public repository at the tag this client pins — and the two legs carry
+# the two answers as their conditions. It is asked of the remote, with no
+# credential and no checkout, because it is the same question the gate will meet
+# a minute later: a runner that cannot read the tag cannot build the contract,
+# and a runner that can has no business running a leg whose entire claim is that
+# the contract is missing.
+#
+# Running both instead is not a stricter gate, and this file tried it for
+# exactly one run. The reduced leg went red on a runner that could read the tag
+# perfectly well: its step requires the gate to come back reduced, the gate had
+# every reason to come back full, and « the contract is absent » was false on
+# that machine. A leg whose premise does not hold is a check of a machine that
+# is not this one.
+#
+# WHAT THEN PROVES THE REDUCED PATH, since a run of this repository can reach
+# the tag and will therefore always take the full leg. The full leg proves it:
+# `tests/test_contract_absence.py` runs this whole suite again in a child
+# interpreter with the contract's packages made unimportable, and requires that
+# run to come back green with every check it could not run named and counted.
+# That guard is why the reduced path cannot rot unobserved while the leg that
+# renders it sits skipped — which is how the fifteen tests that ask for the
+# contract only when they run came to be discovered by a public runner rather
+# than by this repository.
+#
+# A reduced run proves nothing about the contract and nothing about the
+# installed dependency closure of articles 13 and 14, and today nothing about
+# this client against a daemon either — the job lists what it did not run, so
+# that sentence is checkable against the run rather than trusted from here.
 name: gate
 
 on:
@@ -77,28 +97,38 @@ permissions:
   contents: read
 
 jobs:
-  full:
-    name: gate (full)
+  # Asked once, before either leg, and answered about the world rather than
+  # about this repository: the tag is derived from the pins, the remote is asked
+  # whether it has that tag, and the answer is written out for the two legs to
+  # read. No credential, and no clone — `git ls-remote` reads refs and nothing
+  # else — so a fork gets a truthful answer about its own machine, which is the
+  # only kind of answer article 16 can be held to.
+  #
+  # Why the question is the tag and not the network: a runner that can reach
+  # github.com and finds no such tag is in exactly the position of one that can
+  # reach nothing at all — there is no source to build the contract from — and
+  # the gate's reduced outcome is what honestly describes both.
+  reachability:
+    name: is the contract reachable
     runs-on: ubuntu-latest
+    outputs:
+      contract: ${{ steps.reachable.outputs.contract }}
+      tag: ${{ steps.contract.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
         with:
           path: sayfirst-cli
 
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.12.5"
-
-      # Read out of the project file, never spelled here: `scripts/gate.sh`
-      # reads the same pin out of the same file, and `release.yml` derives the
-      # same tag with this same script — held as one text by
+      # Read out of the project file, never spelled here: the gate reads the
+      # same pin out of the same file, and `release.yml` derives the
+      # same tag with this same shell — held as one text by
       # `tests/test_gate_modes.py`, because two readings of one rule is how two
       # files stop agreeing about it. Shell rather than an interpreter, so that
-      # the only program of this repository this job runs is the gate.
+      # this job runs no program of this repository at all.
       #
       # THE ASSUMPTION THIS DERIVATION RESTS ON, stated rather than left to be
-      # discovered. One tag of the control plane is checked out here, and this
-      # client pins TWO of the distributions that tag builds. The tag is
+      # discovered. One tag of the control plane is what the full leg reads, and
+      # this client pins TWO of the distributions that tag builds. The tag is
       # derived from the `sayfirst-contract` pin because the control plane moves
       # every distribution it publishes to one version together — its own rule,
       # held by its own guard, and by nothing in this repository. So the step
@@ -126,10 +156,61 @@ jobs:
           echo "tag=v${pinned}" >> "$GITHUB_OUTPUT"
           echo "The contract is read at v${pinned}." >> "$GITHUB_STEP_SUMMARY"
 
+      # The two words this whole file routes on. `--exit-code` is what makes a
+      # tag that is not there a status rather than empty output silently read as
+      # success, and the tag is passed in as an environment variable rather than
+      # interpolated into the shell, which is this repository's rule for every
+      # value a runner computes.
+      - name: Whether that tag can be read with nothing but this repository
+        id: reachable
+        env:
+          tag: ${{ steps.contract.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags \
+               https://github.com/fredaime/sayfirst-control-plane.git "refs/tags/${tag}" \
+               >/dev/null 2>&1; then
+            echo "contract=reachable" >> "$GITHUB_OUTPUT"
+            {
+              echo "### the contract is reachable at ${tag}"
+              echo ""
+              echo "The full gate runs, and the reduced leg does not: on this runner the"
+              echo "contract is not absent, so a leg whose name says it is would be reporting"
+              echo "about a machine other than this one."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "contract=absent" >> "$GITHUB_OUTPUT"
+            {
+              echo "### the contract cannot be read at ${tag}"
+              echo ""
+              echo "Nothing here holds a credential, so this is a fact about the runner and"
+              echo "the tag, not about permission: either the tag is not published yet or"
+              echo "this machine cannot reach the repository that carries it. The reduced"
+              echo "leg runs instead of the full one and says, in its own name, what it did"
+              echo "not prove."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  full:
+    name: gate (full)
+    needs: reachability
+    if: needs.reachability.outputs.contract == 'reachable'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sayfirst-cli
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+
+      # The tag is the one the job above derived, read as its output rather than
+      # derived a second time here: this job runs because that job answered, and
+      # a second derivation could answer differently.
       - uses: actions/checkout@v5
         with:
           repository: fredaime/sayfirst-control-plane
-          ref: ${{ steps.contract.outputs.tag }}
+          ref: ${{ needs.reachability.outputs.tag }}
           path: sayfirst-control-plane
           fetch-depth: 0
 
@@ -137,7 +218,7 @@ jobs:
         working-directory: sayfirst-cli
         env:
           SAYFIRST_CONTRACT_SOURCE: ${{ github.workspace }}/sayfirst-control-plane
-          SAYFIRST_CONTRACT_REF: ${{ steps.contract.outputs.tag }}
+          SAYFIRST_CONTRACT_REF: ${{ needs.reachability.outputs.tag }}
         run: |
           status=0
           ./scripts/gate.sh || status=$?
@@ -158,8 +239,15 @@ jobs:
               ;;
           esac
 
+  # The other answer. This leg runs when the tag could not be read, which is
+  # the only condition under which its name is true — and skipping it otherwise
+  # is not a gap: the full leg re-runs this whole suite with the contract's
+  # packages hidden, so the reduced path is proven on every run of this
+  # repository even though this job is where it is rendered.
   reduced:
     name: gate (reduced — contract absent, some checks not run)
+    needs: reachability
+    if: needs.reachability.outputs.contract == 'absent'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
