@@ -1,0 +1,213 @@
+# SPDX-License-Identifier: Apache-2.0
+name: release
+
+# The only file in this repository that can publish anything.
+#
+# Article 0 forbids publishing under the decided name — no package on an index,
+# no public repository, no announcement — until the marks are filed. So the act
+# that starts a publication is the operator's tag and nothing else: there is no
+# `branches:` under `push` and no `pull_request:` here, and
+# `tests/test_release_workflow_publishes_only_on_a_tag.py` fails if either
+# arrives. A tag naming a version this distribution does not carry is refused
+# by name in the build and publishes nothing.
+#
+# The dry run exists so the mechanics are proven BEFORE the marks rather than
+# discovered after them: started by hand with publishing switched off, it runs
+# the gate, builds the distribution and checks the artefact, and stops.
+#
+# WHERE THIS WORKFLOW READS THE CONTRACT, AND WHY IT IS NOT WHERE `ci.yml`
+# READS IT. The gate builds `sayfirst-contract` from a checkout of the control
+# plane rather than installing it from an index. `ci.yml` takes that checkout
+# from the repository this project has not opened yet, and carries a read
+# credential to reach it. A release is different, because a release happens
+# after publication and in a fixed order: the contract is published before the
+# client that pins it. So this workflow reads the PUBLIC control plane,
+# `fredaime/sayfirst-control-plane`, at the tag the client's own pin names, and
+# carries NO credential — nothing here can reach a repository a stranger
+# cannot. The tag is `v` followed by the pinned contract version, read out of
+# `pyproject.toml` by the step below: the version is not spelled a second time
+# anywhere in this file, because a version spelled twice is a version that will
+# eventually be spelled two ways.
+#
+# One consequence, written here rather than met in a red run. BEFORE the
+# contract is published, NEITHER path of this workflow can finish on a runner:
+# the public repository does not exist, so the second checkout fails and the
+# gate never starts. That is the honest failure — a release checked against
+# nothing is not a release — and it is why the dry run is proven on the
+# operator's own machine instead, where the version reader, the build and the
+# artefact check run against a local checkout of the control plane. The first
+# green run of this file in CI is therefore a run after the contract is
+# published, which is also the day the second checkout becomes an ordinary
+# install and article 16's « a fork can build, test and contribute with nothing
+# but this repository » is met.
+#
+# A reduced gate is never a release. `scripts/gate.sh` has three outcomes and
+# not two: 75 means the contract was absent and some checks did not run. A
+# release cut from that would be a release nothing had checked against the
+# contract, so the gate step below reads the status and refuses it by name.
+#
+# The `pypi` environment must require a reviewer. That is a setting of the
+# repository — switched on the environment's own settings page, and readable by
+# no file here: this workflow names the environment, and the operator's
+# publication checklist carries this setting. No token is stored anywhere
+# below — the index verifies this workflow's own identity.
+#
+# Every interpreter here is uv's, never the runner's system `python`: this
+# project's own `uv run` cannot resolve the contract packages from an index, so
+# the two version-reader lines pass `--no-project` and name the interpreter,
+# and the reader needs nothing beyond the standard library's TOML module.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Leave false for a dry run: build and check, publish nothing."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and check the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          path: sayfirst-cli
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+
+      # The switch is a statement of intent, and this step is what keeps it from
+      # being read as a permission. What actually refuses to publish from a
+      # dispatch is the `publish` job's own condition, further down; an operator
+      # who switches this on is told where publication comes from rather than
+      # left with a run that quietly ignored them.
+      - name: Publication comes from a tag, not from this button
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: |
+          echo "::error::a dispatch publishes nothing: re-run it with publish false to dry-run, and publish by tagging"
+          exit 1
+
+      - name: The tag names the version this distribution carries
+        if: github.event_name == 'push'
+        working-directory: sayfirst-cli
+        run: uv run --no-project --python 3.12 python scripts/release_version.py --expect "${GITHUB_REF_NAME#v}"
+
+      - name: The distribution carries a version
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: sayfirst-cli
+        run: uv run --no-project --python 3.12 python scripts/release_version.py
+
+      # Read out of the project file, never spelled here: `scripts/gate.sh`
+      # reads the same pin out of the same file for the same reason. Shell
+      # rather than an interpreter, so that the only lines of this workflow
+      # that run a program of this repository are the two above.
+      #
+      # THE ASSUMPTION THIS DERIVATION RESTS ON, stated rather than left to be
+      # discovered. One tag of the control plane is checked out here, and this
+      # client pins TWO of the distributions that tag builds. The tag is
+      # derived from the `sayfirst-contract` pin because the control plane moves
+      # every distribution it publishes to one version together — its own rule,
+      # held by its own guard, and by nothing in this repository. So the step
+      # reads both pins and refuses when they disagree: two pins that name two
+      # versions name no tag at all, and the honest answer is to say so here
+      # rather than to check one of them out and let the other pin fail later.
+      - name: The contract version this client pins
+        id: contract
+        working-directory: sayfirst-cli
+        run: |
+          pinned="$(sed -n 's/.*"sayfirst-contract==\([^"]*\)".*/\1/p' pyproject.toml | head -n 1)"
+          boundary="$(sed -n 's/.*"sayfirst-boundary==\([^"]*\)".*/\1/p' pyproject.toml | head -n 1)"
+          if [ -z "$pinned" ]; then
+            echo "::error::pyproject.toml pins no version of sayfirst-contract, so there is no ref to read the contract at"
+            exit 1
+          fi
+          if [ -z "$boundary" ]; then
+            echo "::error::pyproject.toml pins no version of sayfirst-boundary, and one tag of the control plane has to carry both"
+            exit 1
+          fi
+          if [ "$pinned" != "$boundary" ]; then
+            echo "::error::the pins disagree — sayfirst-contract ${pinned}, sayfirst-boundary ${boundary} — and one tag of the control plane carries one version of both, so there is no ref to read them at"
+            exit 1
+          fi
+          echo "tag=v${pinned}" >> "$GITHUB_OUTPUT"
+          echo "The contract is read at v${pinned}." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          repository: fredaime/sayfirst-control-plane
+          ref: ${{ steps.contract.outputs.tag }}
+          path: sayfirst-control-plane
+
+      - name: gate
+        id: gate
+        working-directory: sayfirst-cli
+        env:
+          SAYFIRST_CONTRACT_SOURCE: ${{ github.workspace }}/sayfirst-control-plane
+          SAYFIRST_CONTRACT_REF: ${{ steps.contract.outputs.tag }}
+        run: |
+          status=0
+          ./scripts/gate.sh || status=$?
+          case "$status" in
+            0)
+              echo "### gate: full green" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "Format, lint, every test and the dependency-closure guard of articles 13" >> "$GITHUB_STEP_SUMMARY"
+              echo "and 14 ran against the contract this release pins." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            75)
+              echo "::error::the gate came back reduced: a release is never cut from a reduced gate"
+              exit 1
+              ;;
+            *)
+              exit "$status"
+              ;;
+          esac
+
+      - name: Build the distribution
+        working-directory: sayfirst-cli
+        run: uv build --out-dir dist
+      # The checker is pinned, as the control plane's is and to the same version:
+      # an unpinned checker is a check whose rules can change between two
+      # releases without either release changing.
+      - name: The built artefacts are well formed
+        working-directory: sayfirst-cli
+        run: uvx twine@7.0.0 check dist/*
+      - name: What this run built
+        working-directory: sayfirst-cli
+        run: ls -l dist/ >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: sayfirst-cli/dist/
+
+  publish:
+    name: publish to the index
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      # Pinned to a release, as the uv action and the artefact checker above
+      # are: the step that hands a distribution to the index is the last thing
+      # standing between a build and the world, and a moving ref is a step
+      # whose rules can change between two releases without either release
+      # changing — the change arriving as a red release, or as a published
+      # artefact, rather than as a diff somebody reviewed.
+      - uses: pypa/gh-action-pypi-publish@v1.14.2

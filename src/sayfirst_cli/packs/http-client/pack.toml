@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[pack]
+name = "http-client"
+classification = "convenience"
+classified_on = "2026-09-15"
+
+[[point]]
+module = "urllib.request"
+attribute = "urlopen"
+capability = "net.egress"
+digest = ["url"]
+audit_event = "urllib.Request"

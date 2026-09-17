@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The gate, run by a machine. Every check it runs is `scripts/gate.sh`, with one
+# stated exception below — the sign-off check, which runs on a pull request and
+# reads the commits of the change against the ref it started from, a range no
+# run on a machine has to be given. Apart from it, what a contributor runs
+# locally is what decides a merge; a step that exists only here is a step nobody
+# can reproduce, and `tests/test_gate_modes.py` fails if this file grows a
+# second one. The rest of what is written below decides which of the gate's two
+# green outcomes this run reached and renders it, which is a rendering job
+# rather than a check.
+#
+# This workflow publishes nothing. `release.yml` is the only file here that can,
+# and only on a tag; a publish step added here is a constitutional change, not a
+# convenience.
+#
+# WHERE THIS WORKFLOW READS THE CONTRACT, AND WHY IT NEEDS NOTHING TO DO IT.
+# `scripts/gate.sh` builds `sayfirst-contract` from a source checkout rather
+# than installing it, so that what the gate reports on is the source the tag
+# this client pins actually names; the dependency-closure guard of articles 13
+# and 14 measures a real install, and does it separately. This file only says
+# where that checkout comes from. It is the control plane's PUBLIC repository,
+# at the tag this client's own pin names, and it carries NO credential: nothing
+# in this file can reach
+# anything a stranger reading it cannot reach too. That is article 16's « a fork
+# can build, test and contribute with nothing but this repository » held as a
+# file rather than promised in a sentence, and it is what publication changed
+# here — while the contract's repository was not open, this step needed a read
+# credential, and a fork that held none got the reduced leg below and nothing
+# else. The tag is `v` followed by the pinned contract version, read out of
+# `pyproject.toml` by the step below. `release.yml` reads the same pin with the
+# same script, and `tests/test_gate_modes.py` requires the two to be the same
+# text: neither file spells the version, because a version spelled twice is a
+# version that will eventually be spelled two ways.
+#
+# WHY A REDUCED LEG STILL RUNS, AND NOW RUNS ON EVERY RUN. A machine that cannot
+# reach that repository still exists — a fork with no network, a runner behind a
+# proxy, a contributor offline — and what it gets is a contract that is simply
+# absent. An absent contract is a fact about the world, not a crash. Article 2
+# says an absence is "never rendered as a negative fact, a zero or a healthy
+# state", so `scripts/gate.sh` has three outcomes and this workflow renders
+# three and not two:
+#
+#   gate (full)                     the contract was built from the control
+#                                   plane's public repository, at the tag this
+#                                   client pins, and every check ran.
+#                                   `scripts/gate.sh` exits 0.
+#   gate (reduced — contract        no checkout of the control plane was made,
+#   absent, some checks not run)    so the contract is absent. Format, lint and
+#                                   every test that does not import the
+#                                   contract ran; the rest are named and
+#                                   counted in the job's summary and in an
+#                                   annotation. `scripts/gate.sh` exits 75. The
+#                                   tick is green and the job says, in its own
+#                                   name, what it did not prove.
+#   failure                         anything else — including a full job whose
+#                                   gate came back reduced, and a reduced job
+#                                   whose gate came back full.
+#
+# The two legs run side by side now, rather than one of them instead of the
+# other. Which leg ran used to be decided by whether this repository held a
+# credential, and that question no longer exists; what is left is a leg that
+# proves the tree against the contract and a leg that proves the reduced path
+# still renders honestly on a machine that has nothing, which is the machine
+# article 16 is about. A reduced run proves nothing about the contract and
+# nothing about the installed dependency closure of articles 13 and 14, and
+# today nothing about this client against a daemon either — the job lists what
+# it did not run, so that sentence is checkable against the run rather than
+# trusted from here.
+name: gate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    name: gate (full)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sayfirst-cli
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+
+      # Read out of the project file, never spelled here: `scripts/gate.sh`
+      # reads the same pin out of the same file, and `release.yml` derives the
+      # same tag with this same script — held as one text by
+      # `tests/test_gate_modes.py`, because two readings of one rule is how two
+      # files stop agreeing about it. Shell rather than an interpreter, so that
+      # the only program of this repository this job runs is the gate.
+      #
+      # THE ASSUMPTION THIS DERIVATION RESTS ON, stated rather than left to be
+      # discovered. One tag of the control plane is checked out here, and this
+      # client pins TWO of the distributions that tag builds. The tag is
+      # derived from the `sayfirst-contract` pin because the control plane moves
+      # every distribution it publishes to one version together — its own rule,
+      # held by its own guard, and by nothing in this repository. So the step
+      # reads both pins and refuses when they disagree: two pins that name two
+      # versions name no tag at all, and the honest answer is to say so here
+      # rather than to check one of them out and let the other pin fail later.
+      - name: The contract version this client pins
+        id: contract
+        working-directory: sayfirst-cli
+        run: |
+          pinned="$(sed -n 's/.*"sayfirst-contract==\([^"]*\)".*/\1/p' pyproject.toml | head -n 1)"
+          boundary="$(sed -n 's/.*"sayfirst-boundary==\([^"]*\)".*/\1/p' pyproject.toml | head -n 1)"
+          if [ -z "$pinned" ]; then
+            echo "::error::pyproject.toml pins no version of sayfirst-contract, so there is no ref to read the contract at"
+            exit 1
+          fi
+          if [ -z "$boundary" ]; then
+            echo "::error::pyproject.toml pins no version of sayfirst-boundary, and one tag of the control plane has to carry both"
+            exit 1
+          fi
+          if [ "$pinned" != "$boundary" ]; then
+            echo "::error::the pins disagree — sayfirst-contract ${pinned}, sayfirst-boundary ${boundary} — and one tag of the control plane carries one version of both, so there is no ref to read them at"
+            exit 1
+          fi
+          echo "tag=v${pinned}" >> "$GITHUB_OUTPUT"
+          echo "The contract is read at v${pinned}." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: fredaime/sayfirst-control-plane
+          ref: ${{ steps.contract.outputs.tag }}
+          path: sayfirst-control-plane
+          fetch-depth: 0
+
+      - name: gate
+        working-directory: sayfirst-cli
+        env:
+          SAYFIRST_CONTRACT_SOURCE: ${{ github.workspace }}/sayfirst-control-plane
+          SAYFIRST_CONTRACT_REF: ${{ steps.contract.outputs.tag }}
+        run: |
+          status=0
+          ./scripts/gate.sh || status=$?
+          case "$status" in
+            0)
+              echo "### gate: full green" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "Format, lint, every test and the dependency-closure guard of articles 13" >> "$GITHUB_STEP_SUMMARY"
+              echo "and 14 ran against a contract built from the control plane's public" >> "$GITHUB_STEP_SUMMARY"
+              echo "repository, at the tag this client pins." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            75)
+              echo "::error::the control plane was checked out and the gate still came back reduced: the contract source was not there"
+              exit 1
+              ;;
+            *)
+              exit "$status"
+              ;;
+          esac
+
+  reduced:
+    name: gate (reduced — contract absent, some checks not run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sayfirst-cli
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+
+      # No second checkout, and that is the whole point of this leg: it is the
+      # machine that has nothing. `SAYFIRST_CONTRACT_SOURCE` is left unset so
+      # that the gate's own default finds nothing and says so, which is what a
+      # fork with no network meets.
+      - name: gate (reduced)
+        working-directory: sayfirst-cli
+        run: |
+          set +e
+          ./scripts/gate.sh 2>&1 | tee gate.log
+          status=${PIPESTATUS[0]}
+          set -e
+          case "$status" in
+            75)
+              headline=$(grep -m1 '^gate: contract absent:' gate.log | sed 's/^gate: //')
+              {
+                echo "### gate (reduced): green, and it proves less than a full gate"
+                echo ""
+                echo "No checkout of the control plane was made on this runner, so"
+                echo "\`sayfirst-contract\` was not built. **${headline}**"
+                echo ""
+                grep '^gate:   not run: ' gate.log | sed 's/^gate:   not run: /- not run: /'
+                echo ""
+                echo "This run proves that the source is formatted, that it lints, and that the"
+                echo "guards reading only this repository's own files hold. It proves nothing"
+                echo "about the contract, nothing about this client against a daemon, and nothing"
+                echo "about the installed dependency closure of articles 13 and 14."
+                echo ""
+                echo "What would make it full: point \`SAYFIRST_CONTRACT_SOURCE\` at a checkout"
+                echo "of the control plane's public repository, which needs no credential and is"
+                echo "exactly what the full leg of this workflow does."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::${headline} — this is a reduced gate, not a full one"
+              ;;
+            0)
+              echo "::error::the gate reported a full run with no contract source; the reduced job cannot vouch for that"
+              exit 1
+              ;;
+            *)
+              exit "$status"
+              ;;
+          esac
+
+  # Article 15 asks every contributor to sign off each commit, and article 16
+  # calls this check required. It is the one check here that is not
+  # `scripts/gate.sh`: it reads the commits of the change against the ref the
+  # change started from, and a run on a machine has no such range to be given.
+  # The whole history is checked out for the same reason a shallow one is
+  # refused — a range that cannot be read answers 2, and 2 is not a pass.
+  developer-certificate-of-origin:
+    name: sign-off on every commit
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Every commit certifies the Developer Certificate of Origin
+        run: >-
+          python scripts/check_developer_certificate_of_origin.py
+          --base=${{ github.event.pull_request.base.sha }}
+          --head=${{ github.event.pull_request.head.sha }}

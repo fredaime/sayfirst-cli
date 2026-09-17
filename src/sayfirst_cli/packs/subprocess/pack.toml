@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[pack]
+name = "subprocess"
+classification = "convenience"
+classified_on = "2026-09-15"
+
+[[point]]
+module = "subprocess"
+attribute = "Popen"
+capability = "process.spawn"
+digest = ["args"]
+audit_event = "subprocess.Popen"
