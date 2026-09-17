@@ -1,276 +1,240 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# `sayfirst` command-line interface
+# `sayfirst` — ask before you act
 
-The open-source command-line interface of the `sayfirst` control plane: the
-product CLI a user installs to connect an existing program to the boundary, to
-read what was decided, and to verify it afterwards. [`QUICKSTART.md`](QUICKSTART.md)
-installs it beside its daemon and walks one governed decision end to end — every
-command on that page was run before it was written down.
+This repository is **the command**. `sayfirst` is the open-source product
+command-line interface of the `sayfirst` control plane: it asks the daemon
+before an effect, puts the boundary in front of a program that was never
+written for it, and reads back and verifies what was decided.
 
-Its content arrives as the partition of the private CLI, by copy with a
-provenance review, slice by slice. The first slice is here and it runs:
-[`docs/PARTITION.md`](docs/PARTITION.md) says what crosses and what is still
-open, and [`docs/PROVENANCE.md`](docs/PROVENANCE.md) says what arrived by copy
-— today, nothing, and why that is the right answer rather than an omission.
+## The 30-second tour
 
-## Three directions
+A governed program puts one question to a local control plane before it does
+anything that matters: *may I do this, with these arguments, as this account?*
 
-A client of this control plane does **three** things, and this repository ships
-all three.
+- The daemon answers **allow**, **deny** or **suspend** — from a policy file a
+  person can read, over a Unix socket that tells it who is asking from the
+  kernel's own credentials. No URL, no token, nothing to leak (article 6).
+- **The program never decides.** It asks, and it does only what was allowed:
+  the boundary (`sayfirst-boundary`) holds the grant for exactly one execution.
+- **A person is in the loop by construction, not by dashboard.** A suspension
+  is a wait. `sayfirst approvals approve` ends it once, the deadline comes from
+  the policy, and a rejection is final.
+- **Every decision leaves a record**, and `sayfirst evidence export` saves a
+  bundle a third party verifies offline, with the contract alone.
+- **The evidence is honest about itself.** An export of an epoch the daemon has
+  not closed verifies « coverage unknown » rather than pretending, and a
+  decision a person granted re-derives as « unverifiable », because a policy
+  file cannot re-derive a human act.
 
-**Before an effect, it asks.** One question — a capability, a scope — put to the
-daemon over a socket whose peer it verified, and one answer rendered as it was
-given: allow, deny or suspend, and "could not ask" when the daemon could not be
-reached. That is `sayfirst ask`, and it is what the first slice implements.
+```mermaid
+flowchart LR
+    P[your program<br/>+ sayfirst-boundary] -- "ask: capability, scope, digest" --> D[(sayfirst-daemon<br/>policy.toml · evidence chain)]
+    D -- "allow · deny · suspend" --> P
+    H[a person<br/>sayfirst approvals approve] -- "one act, once" --> D
+    V[anyone, offline<br/>sayfirst evidence exports] -. "verify the chain" .-> D
+```
 
-**It puts the boundary in front of somebody else's program.** `sayfirst
-instrument run --pack DIR … -- <program>` runs a program with the named effects
-asked about first, reversibly and with nothing written anywhere; `sayfirst
-instrument verify` runs it again under the interpreter's own audit hook and
-proves, from that and the scope's evidence chain alone, that every effect of a
-named kind was preceded by a decision; `sayfirst instrument apply` is reserved
-for the committed code modification and refuses, saying so. `sayfirst packs
-list` prints the convenience packs this distribution ships, one line each with
-the path `--pack` accepts, and `sayfirst packs check PATH` reads one the way the
-engine will before anything runs with it.
-[`docs/PACKS.md`](docs/PACKS.md) is the whole of it.
+## Install
 
-**Afterwards, it reads and verifies.** Every read *from the daemon* names its
-scope explicitly (`--scope`) — the writer's `local` default does not apply. The
-two offline checks name a path instead and take no scope at all: `evidence audit
---file` checks one saved bundle and `evidence exports` a directory of them, and
-both refuse `--scope`, because the file says which scope it holds. This is a
-surface rather than a list, and it grows by slices; what it answers today is
-below, and `sayfirst --help` is the claim that is kept in the dispatch itself.
-
-`sayfirst trace` reads back the record of one decision and follows it into the
-evidence that holds it: the record itself, and where it sits in the chain,
-bounded to the pages the read walks.
-
-`sayfirst explain` reads the reason the control plane gave for a decision — the
-rule it applied and the policy version it ran under — in the plane's own words,
-adding none of its own.
-
-`sayfirst evidence history` and `sayfirst evidence audit` page through scoped
-evidence: `history` renders what each page holds, `audit` puts the served
-verdict beside a local check and names a finding wherever the two disagree;
-`--file` checks an already-saved bundle offline, without opening a socket.
-
-`sayfirst evidence export` saves a bundle a third party can verify with the
-contract distribution alone, offline, no server code and no daemon; `--out`
-names where it is saved. A bundle taken while the daemon's current epoch is
-still open verifies with coverage `unknown` rather than `complete` — the honest
-answer, not a failure. `sayfirst evidence exports` lists and re-verifies every
-`*.json` bundle saved in a directory.
-
-`sayfirst approvals show` reads where one suspended wait stands: its state,
-when it was asked, when it ends, and — once a person has acted — when and why.
-`sayfirst approvals approve` and `sayfirst approvals reject` end that wait
-exactly once, an optional `--reason` and all, and render the same record
-`show` would: one person's act, and nothing that counts signatures or names a
-designation (article 12). These three follow the exit codes below, with no case
-of their own: an approval already resolved, asked again, answers
-`approval_resolved`, which the registry classifies as a refusal — so it is the
-`3` below, like every other refusal, and this client special-cases nothing.
-
-`trace`, `explain` and `evidence history` exit `0` on a read, whatever the
-record's own outcome. `evidence audit`, `evidence export` and `evidence exports`
-exit with the local check's result instead: `0` when it holds, `6` when it finds
-what the plane did not say, `7` when it cannot conclude — which is the ordinary
-answer for a bundle taken while the epoch is still open, and why
-`sayfirst evidence export && …` is not how to script one. A chain the verifier
-could not judge — an entry declaring a recipe this generation holds no reader
-for, a range assembled out of order, an instant outside the calendar — is `7`
-as well, with the sequence it stopped at: the answer arrived and the check could
-not conclude, which is neither a failure to obtain the answer nor a finding
-against the chain. Every command that reads from the control plane exits `3`
-when the request was refused, `4` when the plane could not be read from or the
-answer itself could not be read at all, and `64` on a misused invocation; a
-usage error the parser catches exits `2` everywhere.
-
-`sayfirst instrument verify` uses the same two local-check codes for the proof
-it makes: `0` only when every point of every designated pack was `governed` and
-no effect went unjudged, `6` for an effect no decision preceded — a finding this
-client made, never a denial the plane gave — and `7` when the check could not
-conclude, which includes a path the run never walked and an effect this proof
-could not judge. A run that concluded nothing at all says which of its endings
-happened, and answers with that ending's own code: `4` when the chain could not
-be read, before the program started or while it ran, and when the verifier never
-saw the program's own code start; `64` when the invocation was refused before it
-began; `7` when findings arrived and would not read. `sayfirst instrument run`
-owns none of these: it passes the governed program's own ending through
-untouched, and answers `64` only for mistakes in the invocation. `sayfirst packs
-list` exits `64` when a pack this distribution ships will not read — it names it,
-prints the rest of the list anyway, and never ends in a traceback.
-
-The operator closed Q-A on 2026-09-05: this repository owed the evidence
-surface, and its promise to read and verify became a commitment with a date on
-it — kept, as of this slice. [`docs/PARTITION.md`](docs/PARTITION.md) records
-the decision; [`docs/EVIDENCE-SURFACE.md`](docs/EVIDENCE-SURFACE.md) records
-what shipped and the contract support it used. Export verification uses the
-recipe and vectors from the contract distribution, without importing server
-code.
-
-None of the three defines control semantics or derives a decision. A client
-"explains and invokes" control semantics; it "never defines them, never keeps a
-decision past the lifetime the
-control plane gave it, and never derives an answer the control plane did not
-give" (article 1). Asking, instrumenting and reading are three ways of carrying
-an answer someone else made — the third of them, the verifier, reads the
-interpreter and the chain and reaches no verdict of its own about policy — and
-that is why all three belong to a client.
-
-## The first slice
-
-One command, end to end, against the open control plane's contract
-distribution: `sayfirst ask` puts one question to the daemon and renders its
-answer.
+`sayfirst-cli` 0.2.0 is on the Python index. As a tool, in an environment of
+its own:
 
 ```console
-$ sayfirst ask --capability example.effect --scope local --socket /run/user/1000/sayfirst.sock
+$ uv tool install sayfirst-cli==0.2.0
+ + sayfirst-boundary==0.2.0
+ + sayfirst-cli==0.2.0
+ + sayfirst-contract==0.2.0
+Installed 1 executable: sayfirst
+```
+
+Three distributions arrive and no more: the command, the contract it speaks, and
+the boundary a governed program holds its grant in. Never a web framework, never
+a database layer — article 13, measured on a real install by
+`scripts/check_dependency_closure.py` rather than promised here.
+`sayfirst-contract-stub` (a scriptable fake) and `sayfirst-conformance` are on
+the index at 0.2.0 as well.
+
+The daemon that answers is `sayfirst-control-plane`, and it is **publishing** —
+not on the index as this is written. Build it from a checkout of
+[the control plane's repository](https://github.com/fredaime/sayfirst-control-plane),
+the way [`QUICKSTART.md`](QUICKSTART.md) does:
+
+```console
+$ (cd /path/to/sayfirst-control-plane && uv build --all-packages --out-dir ~/quickstart/wheels)
+$ uv pip install --python .venv/bin/python --find-links wheels sayfirst-cli==0.2.0 sayfirst-control-plane==0.2.0
+```
+
+## Try it in five minutes
+
+Linux or macOS, Python 3.12, 3.13 or 3.14, and
+[`QUICKSTART.md`](QUICKSTART.md), which walks one governed decision end to end:
+a policy of two rules, an allow, a suspension, a person's answer, then the chain
+read back and exported. Every command on that page was run, in that order, before
+it was written down; its answers are pasted from that run. Two of them:
+
+```console
+$ .venv/bin/sayfirst ask --capability example.read --scope local --socket $S
 verified: true (server_uid 1000, expected 1000)
 outcome: allow
 reason: policy_allows
-capability: example.effect in scope local
-decision: decision-1 at 2026-09-04T20:11:45.929523+00:00
-policy version: sha256:44d91909ffe6283e67c73bad39d698448aa5e8bbdc1b5aa64a635a604e12f7e1
+$ .venv/bin/sayfirst evidence export --scope local --socket $S --from 1 --out bundle.json
+local_check: unverifiable
+manifest: recomputes
+chain: intact
+coverage: unknown
+issue: coverage_unknown
 ```
 
-When the daemon cannot be reached, it says that, and it says it as its own
-result rather than as a refusal:
+The `verified:` line is the daemon proving who it is. The second command is the
+honesty: that bundle's chain is intact and its manifest recomputes, and it still
+answers `unknown`, because its epoch is open.
+
+## What you get — three directions
+
+A client of this control plane does **three** things, and this repository ships
+all three. `sayfirst --help` is the claim kept in the dispatch itself; it names
+`ask`, `trace`, `explain`, `evidence`, `approvals`, `instrument` and `packs`.
+
+**Before an effect, it asks.** One question — a capability, a scope, optionally
+a digest of the arguments — put to the daemon over a socket whose peer it
+verified, and one answer rendered as it was given: allow, deny or suspend, and
+"could not ask" when the daemon could not be reached. That is `sayfirst ask`.
+
+**It puts the boundary in front of somebody else's program.** `sayfirst
+instrument run --pack DIR … -- <program>` runs a program with the named effects
+asked about first, reversibly and writing nothing anywhere; `instrument verify`
+runs it again under the interpreter's own audit hook and proves, from that and
+the scope's evidence chain alone, that every effect of a named kind was preceded
+by a decision; `instrument apply` is reserved for the committed code
+modification and refuses, saying so. `sayfirst packs list` prints the packs this
+distribution ships — `database`, `http-client`, `subprocess` — with the path
+`--pack` accepts ([`docs/PACKS.md`](docs/PACKS.md)). A program whose effects are
+not library calls composes the boundary by hand from `sayfirst-boundary`.
+
+**Afterwards, it reads and verifies.** `sayfirst trace` reads back one decision
+and follows it into the evidence that holds it; `explain` renders the reason the
+control plane gave — the rule it applied, the policy version it ran under — and
+adds none of its own. `evidence history` pages a scope, `audit` puts the served
+verdict beside a local check and names a finding wherever the two disagree,
+`export` saves a bundle and `exports` re-verifies every one in a directory. Each
+read *from the daemon* names its scope (`--scope`); the two offline checks name
+a path and refuse `--scope`, because the file says which scope it holds
+([`docs/EVIDENCE-SURFACE.md`](docs/EVIDENCE-SURFACE.md)).
+
+**And a person ends a wait.** `sayfirst approvals show` reads where a suspended
+request stands: its state, when it was asked, when it ends, and once a person has
+acted, when and why. `approve` and `reject` end it exactly once, with an optional
+`--reason` — one person's act, nothing that counts signatures (article 12).
+
+### The exit codes
+
+`0` allow, `1` deny, `5` suspend, `3` the request was refused, `4` the control
+plane could not be asked — because article 1 requires that "denied" and "could
+not ask" never read as each other. A caller branching on a single non-zero exit
+would read an unreachable daemon as a refusal; the codes exist so that it
+cannot. `trace`, `explain` and `evidence history` exit `0` on a read, whatever
+the record said. The checks — `evidence audit`, `export`, `exports` and
+`instrument verify` — carry the local check's own result instead: `0` when it
+holds, `6` for a finding the plane did not state, `7` when it could not
+conclude, the ordinary answer for a bundle from an open epoch (so `sayfirst
+evidence export && …` is not how to script one). A misused invocation is `64`;
+a usage error is `2` everywhere.
+
+## What it is not (yet)
+
+- **A deployment of this version is graded `observability`.** The governed
+  program can write or replace the evidence store, so the record it keeps is
+  one that program could have forged — or `unverified`, which claims nothing.
+  **At neither grade is any claim of proof or of tamper detection made.**
+  Article 7 defines a third grade, `evidence`, which no deployment of this
+  version reaches. This client displays the grade it was given and never
+  computes a second one.
+- **Nothing here confines anything.** A program that does not call the boundary
+  is not governed; pair the system with operating-system sandboxing for code you
+  do not trust ([`SECURITY.md`](SECURITY.md)).
+- **`instrument run` can fail open, and that is why `verify` exists.** An effect
+  the interposition does not reach runs unasked — a decision never taken, not a
+  denial overridden. `verify` reports it as this client's own finding, `6`, and
+  `7` for a path the run never walked.
+- **A gate can come back *reduced*.** Where the contract cannot be built, the
+  gate names, counts and prints every check it did not run, and exits `75`. A
+  reduced run is not a pass and never renders as one.
+
+## Architecture
+
+| Repository | What it is | Distributions |
+|---|---|---|
+| [`sayfirst-control-plane`](https://github.com/fredaime/sayfirst-control-plane) | the daemon, the contract, the boundary, the policy format, the evidence chain | the daemon and its operator surface, `sayfirst-contract`, `sayfirst-boundary`, and the stub, conformance and testing kits |
+| [`sayfirst-cli`](https://github.com/fredaime/sayfirst-cli) | this repository: the `sayfirst` command — ask, trace, explain, evidence, approvals, instrument, packs | `sayfirst-cli` |
+| [`sayfirst-governed-agent-demo`](https://github.com/fredaime/sayfirst-governed-agent-demo) | a LangGraph agent governed node by node — the demonstrator, not a product | none; it is cloned and run |
+
+Inside this one: the command tree and its seven verbs (`src/sayfirst_cli/`), the
+instrumentation engine with its three packs, and the offline verifier that reads
+the contract's canonicalization, recipe and vectors — no line of server code.
+
+**Where the line falls.** The control plane's repository keeps the operator
+surface that inspects its own daemon — `status`, `doctor`, `policy
+show|history`, `plugins list`, with `systems {register,retire}` pending its own
+question. `trace`, `explain` and `evidence {audit,history,exports,export}` are
+this client's: they read the decisions and evidence the plane supplied.
+[`docs/PARTITION.md`](docs/PARTITION.md) says it command by command, and names
+the questions it does not close.
+
+**What arrived by copy: nothing.** [`docs/PROVENANCE.md`](docs/PROVENANCE.md)
+carries an empty table and says why that is the answer rather than an omission:
+the transport this client speaks — a Unix socket, the identity read from the
+peer credential the kernel reports — exists in no other tree to copy.
+
+**The name.** The product and the command are `sayfirst`, decided by the operator
+on 2026-09-04. This repository claims the distribution `sayfirst-cli`, the import
+package `sayfirst_cli` and the console script `sayfirst`; the control plane's
+operator surface takes the daemon's own form of the name instead, and
+`tests/test_decided_name.py` holds the name as a word.
+
+## The gate, the guards, and contributing
+
+`scripts/gate.sh` is the whole gate in one command: format, lint, tests, and the
+guard that installs this distribution into an empty environment and reads back
+everything that arrived with it. What a contributor runs is what decides a merge,
+bar the sign-off check below, which reads a range only a pull request has. The
+contract is built from a checkout of the control plane's repository, at the tag
+this client pins:
 
 ```console
-$ sayfirst ask --capability example.effect --socket /run/user/1000/absent.sock
-verified: false (server_uid not stated, expected not stated)
-could not ask: unreachable: [Errno 2] No such file or directory
-retryable: true
-$ echo $?
-4
+$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.2.0 ./scripts/gate.sh
 ```
 
-It exits `0` on `allow`, `1` on `deny`, `5` on `suspend`, `3` when the request
-was refused and `4` when the control plane could not be asked — because
-article 1 requires that "denied" and "could not ask" never read as each other.
-There is no `--url` and nothing that takes a token: the boundary says who the
-caller is, and it says so from the socket (article 6).
+The workflow does the same and carries no credential of any kind: a fork can
+build, test and contribute with nothing but this repository and a public clone
+(article 16). Guards hold the rest — every published sentence sends a reader
+somewhere they can go (`tests/test_public_vocabulary.py`), every reader-facing
+link resolves (`tests/test_pointers_survive_publication.py`), every file names its
+licence (`tests/test_spdx_identifiers.py`), and the command surface stays on this
+side of the partition (`tests/test_partition_boundary.py`).
 
-## The gate
+Contributions are Apache-2.0 under the Developer Certificate of Origin, read on
+every pull request by `scripts/check_developer_certificate_of_origin.py`, which
+refuses a commit with no well-formed sign-off and refuses a range it cannot read
+rather than reporting it as passing (article 15). The control plane's
+[`CONSTITUTION.md`](https://github.com/fredaime/sayfirst-control-plane/blob/main/CONSTITUTION.md)
+binds this repository too, adopted **by pointer, never by copy, because a copy
+drifts** (article 0); that repository also carries the project's
+[`CONTRIBUTING.md`](https://github.com/fredaime/sayfirst-control-plane/blob/main/CONTRIBUTING.md),
+its [`GOVERNANCE.md`](https://github.com/fredaime/sayfirst-control-plane/blob/main/GOVERNANCE.md)
+and the one marks policy, which [`TRADEMARKS.md`](TRADEMARKS.md) points at rather
+than copies. Here: [`SECURITY.md`](SECURITY.md) — report a vulnerability through
+GitHub's private reporting, never a public issue — [`LICENSE`](LICENSE),
+[`NOTICE`](NOTICE) and [`CHANGELOG.md`](CHANGELOG.md).
 
-`scripts/gate.sh` is the whole gate: format, lint, tests, and the guard that
-installs this distribution into an empty environment and reads back everything
-that arrived with it. That last one is article 13 made mechanical rather than
-promised — and it proves on every run that it can fail, by planting a web
-framework into the environment that has just passed and requiring the check to
-reject it.
+## Status
 
-`sayfirst-contract` is on no index, because article 0 forbids publishing
-anything until the marks are filed. So the gate is told where a checkout of the
-control plane's repository is:
+**0.2.0 is the first public release**, 2026-09-17. What is *not* here is named
+too, because a surface a reader assumes is an overclaim: `connect`, `profile`,
+`whoami`, `integrate` and `version` are in
+[`docs/PARTITION.md`](docs/PARTITION.md) and none of them exists here.
 
-```console
-$ SAYFIRST_CONTRACT_SOURCE=../sf-control-plane-lt ./scripts/gate.sh
-```
-
-It fails, rather than skipping, when it is not told. A skipped guard is a guard
-that cannot fail.
-
-## What binds here
-
-The constitution of the open control plane —
-[`CONSTITUTION.md`](https://github.com/fredaime/sayfirst-control-plane/blob/main/CONSTITUTION.md),
-in that repository — binds this repository too. Its article 0 says so: it binds
-"this repository and every other open repository of the project", and an open
-repository adopts it **by pointer, never by copy, because a copy drifts**.
-
-**That pointer became a link in the act that published this repository, and was
-not one before.** The open control plane is published as a repository created
-fresh (article 0), and until it existed the only URL this document could have
-carried was the one repository the project has decided never to publish — a link
-that would have resolved for nobody from the first public minute, in the
-document a newcomer reads first. `docs/publication-checklist.md` orders the
-control plane before this client for that reason, and
-`tests/test_pointers_survive_publication.py` still reddens on any reader-facing
-link to the repository that is never published — it is what kept the promise
-from being made early. The same applies to `TRADEMARKS.md`, which is why this
-repository carries one that points rather than one that copies.
-
-The articles this repository will answer to first:
-
-- **article 1** — a client explains and invokes control semantics; it never
-  defines them, never keeps a decision past the lifetime it was given, and never
-  derives an answer the control plane did not give;
-- **article 13** — the client depends on the contract distribution and never on
-  the server distribution, so installing it never installs a web framework or a
-  database layer;
-- **article 14** — nothing here imports, names or is shaped by a private
-  product; files that arrive from a private repository arrive by copy with a
-  provenance review;
-- **article 15** — Apache-2.0, contributions under the Developer Certificate of
-  Origin, read on every pull request by
-  `scripts/check_developer_certificate_of_origin.py`, which refuses a commit
-  carrying no well-formed sign-off and refuses a range it cannot read rather
-  than reporting it as passing.
-
-## The name
-
-The product and the command are **`sayfirst`**, decided by the operator on
-2026-09-04. Every
-distribution the open side publishes takes it as a prefix, the way the retired
-placeholder always said they would: this CLI as `sayfirst-cli`, and the plane as
-`sayfirst-control-plane` where the plane is named. *Which* distributions this
-repository ships is a different question — that is the partition, and it is not
-decided.
-
-### Who holds the command — decided, 2026-09-05
-
-This repository claims the distribution `sayfirst-cli`, the import package
-`sayfirst_cli` and the console script `sayfirst`. Until 2026-09-05 that was an
-assumption, stated as one: the control plane's repository claimed the same three
-names for its operator surface, each repository's guard read its own manifest
-and passed, and no test anywhere could see the other tree. The operator settled
-it on 2026-09-05, and all three names in all three forms belong to the product
-command-line interface, which is this repository.
-
-The control plane's repository is giving them up: its operator surface — the
-commands that inspect its daemon — takes the daemon's own form of the product
-name instead, the conventional Unix shape in which the daemon and the commands
-that inspect it share one binary. That change is on a branch there, dated
-2026-09-05 and not merged, so until it merges both trees still declare the three
-names. Nothing had been published under either claim (article 0), so the
-collision was a fact about two source trees and never about an installed
-environment. [`docs/PARTITION.md`](docs/PARTITION.md) records
-the question and its answer as Q-D.
-
-Deciding the name did **not** unblock publishing on its own. Article 0 forbids
-publishing anything under it — no package on an index, no public repository, no
-announcement — until three conditions hold together:
-
-1. **the name is decided** — met, 2026-09-04;
-2. **the marks are filed** — no file here can read a registry, so this
-   repository asserts nothing about it and a session reading this file must not
-   read the decided name as evidence of it. The date the filing was made and the
-   reference it produced are recorded on `docs/publication-checklist.md`, and
-   article 0 puts that act before any public repository of this project;
-3. **every occurrence of the placeholder is replaced** — done here; the
-   condition is project-wide, and the other repositories' occurrences are not
-   this repository's to change.
-
-## What is still not decided
-
-- **The partition.** Which parts of the private CLI cross, and what is renamed
-  on the way, is measured privately and executed slice by slice.
-  [`docs/PARTITION.md`](docs/PARTITION.md) proposes the open command surface,
-  names the three questions it does not close, and says plainly which of its
-  lines is a decision and which is a choice it made to keep moving. Two of its
-  questions are now answered — Q-D, the name collision, and Q-A, the evidence
-  surface — and both stay in the document, marked closed and dated.
-
-## Boundary with the control plane
-
-The control plane's operator surface keeps `status`, `doctor`,
-`policy show|history` and `plugins list`, which inspect its daemon's own state.
-`systems {register,retire}` also stays there pending its separate question.
-The 2026-09-05 decision assigns `trace`, `explain` and
-`evidence {audit,history,exports,export}` to this product client: they read the
-decisions and evidence the plane supplied. Q-B, Q-C and Q-E remain open; Q-D
-was already closed.
+Next, and only what a document in this tree already says: the `evidence` grade of
+article 7, which the control plane must reach first; the open questions of the
+partition, including which side answers `whoami`; and `instrument apply`, which
+keeps the name of the committed code modification and refuses until that mode
+exists. [`CHANGELOG.md`](CHANGELOG.md) names each one as it lands.
