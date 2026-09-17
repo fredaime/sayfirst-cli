@@ -13,6 +13,13 @@ declares; a release with no section fails the gate.
   performed, and a guard fails when one of them stops being a line of it. The security policy says
   which of article 0's two paths this repository is published by: a fresh repository, never a
   change of visibility.
+- The gate reduces on a machine with no contract instead of failing there. A test that asks for a
+  command only when it runs — this client imports a verb when it dispatches it — is now stood
+  down by name and counted, the way a module that could not be imported already was, and a run
+  with the contract hidden is required to come back green rather than merely to collect.
+- One of the two gate legs runs, decided by whether the control plane's public repository can be
+  read at the tag this client pins. The question is asked once, of the remote, with no credential;
+  a leg reporting that the contract is absent no longer runs on a machine where it is not.
 
 ## 0.2.0
 

@@ -14,12 +14,23 @@ is planted against here:
   runs strictly more of them;
 * an import failure that is not the contract's absence stays a failure;
 * the packages the rule names are the packages the contract's own distributions
-  provide.
+  provide;
+* **a run with the contract hidden is green, and green all the way through.**
+
+That last one is here because its absence was measured rather than imagined.
+Every child run below asked `--collect-only`, so every claim this file made was
+a claim about collection — and a test that collects cleanly and then reaches for
+the contract mid-run was outside all of them. Fifteen did, the first time a
+machine with no contract ran the whole suite instead of collecting it, and the
+gate went red beside a list of modules it had politely stood down. The reduced
+path is exercised for real below, so this file now holds the outcome the gate
+reports rather than the collection it starts with.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, distribution
@@ -29,8 +40,11 @@ import pytest
 from contract_absence import (
     CONTRACT_DISTRIBUTIONS,
     CONTRACT_PACKAGES,
+    NOT_RUN,
+    NotRun,
     absent_contract_package,
     contract_is_installed,
+    record_at_call_time,
     skip_without_the_contract,
     write_report,
 )
@@ -76,10 +90,32 @@ class Collected:
             line.split("\t") for line in report.read_text(encoding="utf-8").splitlines() if line
         ]
         self.modules = {what: why for kind, what, why in self.not_run if kind == "module"}
+        self.stood_down = {what: why for kind, what, why in self.not_run if kind == "test"}
+
+    @property
+    def passed(self) -> int:
+        """How many tests the child ran and passed, read off its own summary line."""
+        found = re.search(r"(\d+) passed", self.output)
+        return int(found.group(1)) if found else 0
 
 
 def collect(tmp_path: Path, hide: tuple[str, ...] = ()) -> Collected:
     """Collect this repository's tests in a child interpreter, hiding what is named."""
+    return _child(tmp_path, hide, ("--collect-only",))
+
+
+def run_the_suite(tmp_path: Path, hide: tuple[str, ...] = ()) -> Collected:
+    """RUN this repository's tests in a child interpreter, hiding what is named.
+
+    The same child as `collect`, without `--collect-only`: what the gate does,
+    rather than the first phase of it. A test that collects and then asks for
+    the contract is invisible to the other one.
+    """
+    return _child(tmp_path, hide, ())
+
+
+def _child(tmp_path: Path, hide: tuple[str, ...], arguments: tuple[str, ...]) -> Collected:
+    """One child `pytest`, with the named top-level packages made unimportable."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     hider = tmp_path / "sitecustomize.py"
     hider.write_text(_HIDER, encoding="utf-8")
@@ -92,7 +128,7 @@ def collect(tmp_path: Path, hide: tuple[str, ...] = ()) -> Collected:
     environment["SAYFIRST_TEST_HIDE"] = ",".join(hide)
     environment["SAYFIRST_GATE_NOT_RUN"] = str(report)
     completed = subprocess.run(
-        (sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:cacheprovider"),
+        (sys.executable, "-m", "pytest", "-q", "-rs", "-p", "no:cacheprovider", *arguments),
         cwd=REPOSITORY,
         env=environment,
         capture_output=True,
@@ -131,6 +167,84 @@ def test_the_contract_installed_skips_nothing_and_collects_strictly_more(
     assert present.completed.returncode == 0, present.output
     assert present.not_run == []
     assert len(present.tests) > len(absent.tests)
+
+
+def test_a_whole_run_with_the_contract_hidden_is_green_and_not_only_collectable(
+    tmp_path: Path,
+) -> None:
+    """THE REGRESSION THIS FILE MISSED ONCE. Hide the contract and run, do not collect.
+
+    A machine with no contract has to reach the gate's reduced outcome, and the
+    gate reaches it only if `pytest` itself comes back green. Collection being
+    clean is the weaker claim and it was the only one made here: the fifteen
+    tests that ask for a command at call time collected, ran, and failed.
+
+    The nested run stops here rather than recurring: a child with the contract
+    hidden runs this module too, and this test inside it would start a third.
+    """
+    if os.environ.get("SAYFIRST_TEST_HIDE"):
+        pytest.skip("this process is already the child run whose behaviour is being read")
+
+    run = run_the_suite(tmp_path, hide=tuple(sorted(CONTRACT_PACKAGES)))
+
+    assert run.completed.returncode == 0, run.output
+    # Anti-vacuity, twice over: a run that stood everything down, or one that
+    # stood nothing down and simply had the contract after all, would each
+    # satisfy the line above while proving the opposite of what it says.
+    assert run.passed > 0, run.output
+    assert run.modules, "the contract was hidden and no module said it needed it"
+    for what, why in run.stood_down.items():
+        if why.startswith("it imports "):
+            assert why.removeprefix("it imports ").split()[0] in CONTRACT_PACKAGES, (what, why)
+
+
+def test_the_call_time_rule_stands_a_test_down_by_name_and_counts_it(monkeypatch) -> None:
+    """What the second reading does when it fires, held without hiding anything.
+
+    The planted entry is removed again: this test runs inside the very run whose
+    count it would otherwise change.
+    """
+    import contract_absence
+
+    monkeypatch.setattr(contract_absence, "contract_is_installed", lambda: False)
+    absent = ModuleNotFoundError("No module named 'sayfirst_contract'", name="sayfirst_contract")
+    before = len(NOT_RUN)
+    try:
+        sentence = record_at_call_time("tests/planted.py::planted", absent)
+        assert sentence == (
+            "the contract is absent: tests/planted.py::planted imports "
+            "sayfirst_contract when it runs"
+        )
+        assert NOT_RUN[-1] == NotRun(
+            "tests/planted.py::planted", "test", "it imports sayfirst_contract when it runs"
+        )
+    finally:
+        del NOT_RUN[before:]
+
+
+def test_the_call_time_rule_never_fires_while_the_contract_is_installed(monkeypatch) -> None:
+    """THE PLANT. With the contract installed, a test that cannot import it is broken.
+
+    Both refusals at once: the failure the rule would otherwise recognise is
+    offered to it while the contract is present, and a failure that is not the
+    contract's absence is offered to it while the contract is gone.
+    """
+    import contract_absence
+
+    absent = ModuleNotFoundError("No module named 'sayfirst_contract'", name="sayfirst_contract")
+    before = len(NOT_RUN)
+
+    monkeypatch.setattr(contract_absence, "contract_is_installed", lambda: True)
+    assert record_at_call_time("tests/planted.py::planted", absent) is None
+
+    monkeypatch.setattr(contract_absence, "contract_is_installed", lambda: False)
+    ours = ModuleNotFoundError("No module named 'sayfirst_cli'", name="sayfirst_cli")
+    assert record_at_call_time("tests/planted.py::planted", ours) is None
+    assert (
+        record_at_call_time("tests/planted.py::planted", AssertionError("a real failure")) is None
+    )
+
+    assert len(NOT_RUN) == before, "the rule counted something it refused to stand down"
 
 
 def test_an_import_failure_that_is_not_the_contract_stays_a_failure(tmp_path: Path) -> None:

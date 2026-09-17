@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Which tests the contract carries, established by collecting them.
+"""Which tests the contract carries, established by watching them ask for it.
 
 `sayfirst-contract` is published on no index — article 0 forbids publishing
 anything until the marks are filed — and it cannot be vendored here either
 (article 14 and `docs/PROVENANCE.md`: the first copy into an open repository is
 blocked by a question counsel owns). So there are machines where the contract
-simply is not present: a fork's, and this project's own CI whenever the read
-credential is not set.
+simply is not present: a fork with no network, a runner behind a proxy, anyone
+working offline.
 
 A gate that stops dead on those machines proves nothing. A gate that runs what
 it can and calls the result an ordinary pass proves less than it says it does.
@@ -15,30 +15,43 @@ rendered as a negative fact, a zero or a healthy state" — and asks a status
 surface for three values where a reader might expect two.
 
 So the tests that do not need the contract are run, and the rest are reported by
-name. Which are which is **collected, never listed**: a module belongs to the
-contract if importing it asks for a contract package and does not find one. A
-list written here would be right on the day it was written and wrong on the day
-a test grew an import, and it would be wrong silently, which is the failure this
-whole file exists to avoid.
+name. Which are which is **collected, never listed**: a test belongs to the
+contract if asking for a contract package is what stopped it. A list written
+here would be right on the day it was written and wrong on the day a test grew
+an import, and it would be wrong silently, which is the failure this whole file
+exists to avoid.
 
-Two things the rule refuses to do, each with a test that plants the defect in
-`tests/test_contract_absence.py`:
+**There are two moments at which a test asks, and reading only the first cost a
+red run.** A module that imports the contract at its top says so during
+collection, and `ContractAwareModule` below stands that module down. A module
+that imports only `sayfirst_cli.main` says nothing during collection and asks
+later: a verb is resolved through `importlib` when it is dispatched, so
+`ask --help` reaches for the contract at CALL time, inside a module that
+collected cleanly. Those tests failed while every module-level importer was
+politely skipped — the same fact about the world, rendered once as a stand-down
+and once as a crash. `record_at_call_time` is the second reading, and it is the
+same rule: the failure is read, never a list of tests.
+
+Two things the rule refuses to do at either moment, each with a test that plants
+the defect in `tests/test_contract_absence.py`:
 
 * it never hides an import failure that is not the contract's absence — a
   mistyped import, a module this repository broke, anything at all — because a
   gate that swallows those is worse than no gate;
-* it never fires while the contract is installed. There, a module that cannot
+* it never fires while the contract is installed. There, a test that cannot
   import it is a failure, and stays one.
 
 `scripts/gate.sh` sets `SAYFIRST_GATE_NOT_RUN` to a path and reads back what was
-not run, so that the count it prints comes from the collection rather than from
-a second reading of it.
+not run, so that the count it prints comes from the run rather than from a second
+reading of it.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,6 +142,49 @@ def record(module_path: Path | str, package: str) -> str:
     why = f"it imports {package}"
     NOT_RUN.append(NotRun(module, "module", why))
     return f"the contract is absent: {module} {why[len('it ') :]}"
+
+
+def record_at_call_time(node_id: str, error: BaseException) -> str | None:
+    """Record a test the contract's absence stopped mid-run, or answer `None`.
+
+    Collection reads the modules that import the contract at their top. This
+    reads the ones that ask for it later — a test that drives a command, which
+    this client imports only when the verb is dispatched — and it reads it off
+    the failure that arrived rather than off a list of tests, for the reason the
+    module docstring gives.
+
+    `None` is the answer that keeps the gate a gate, and it is the answer in
+    both of the cases the rule refuses: a failure that is not a contract
+    package's absence, and any failure at all while the contract is installed.
+    The caller re-raises on `None`, so a red test stays red.
+    """
+    if contract_is_installed():
+        return None
+    package = absent_contract_package(error)
+    if package is None:
+        return None
+    why = f"it imports {package} when it runs"
+    NOT_RUN.append(NotRun(node_id, "test", why))
+    return f"the contract is absent: {node_id} {why[len('it ') :]}"
+
+
+@contextmanager
+def standing_down_what_the_contract_stopped(node_id: str) -> Iterator[None]:
+    """Run a phase of one test, standing it down if the contract's absence stops it.
+
+    The context manager lives here rather than in `tests/conftest.py` because
+    this is the file the tests read: a rule for *not running tests* that was
+    written in one place and held in another is the drift this project keeps
+    finding. `conftest.py` wraps the setup and the call phases with it and does
+    nothing else.
+    """
+    try:
+        yield
+    except BaseException as error:
+        sentence = record_at_call_time(node_id, error)
+        if sentence is None:
+            raise
+        pytest.skip(sentence)
 
 
 def skip_without_the_contract(request, why: str) -> None:
