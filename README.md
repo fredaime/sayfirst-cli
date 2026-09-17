@@ -48,9 +48,9 @@ Installed 1 executable: sayfirst
 ```
 
 Three distributions arrive and no more: the command, the contract it speaks, and
-the boundary a governed program holds its grant in. Never a web framework, never
-a database layer — article 13, measured on a real install by
-`scripts/check_dependency_closure.py` rather than promised here.
+the boundary in which a governed program holds its grant. Never a web framework,
+never a database layer — article 14's direction of dependency, measured on a
+real install by `scripts/check_dependency_closure.py` rather than promised here.
 `sayfirst-contract-stub` (a scriptable fake) and `sayfirst-conformance` are on
 the index at 0.2.0 as well.
 
