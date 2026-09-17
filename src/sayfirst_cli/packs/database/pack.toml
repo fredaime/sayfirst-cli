@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[pack]
+name = "database"
+classification = "convenience"
+classified_on = "2026-09-15"
+
+[[point]]
+module = "sqlite3"
+attribute = "connect"
+capability = "database.open"
+digest = ["database"]
+audit_event = "sqlite3.connect"
