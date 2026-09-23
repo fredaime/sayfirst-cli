@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
+import stat
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
@@ -13,6 +15,7 @@ from typing import Final, TextIO
 
 from sayfirst_contract.client import Answered, CouldNotAsk, Refused, Result
 from sayfirst_contract.evidence import (
+    GRADES,
     ChainCondition,
     ChainVerdict,
     ExportVerdict,
@@ -92,9 +95,12 @@ def _history(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
 
 def _audit(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
     parser = argparse.ArgumentParser(prog="sayfirst evidence audit")
-    source = parser.add_mutually_exclusive_group(required=True)
+    # One or the other and never both; neither is an online audit at the
+    # per-user default address, which is what every other read does with no
+    # `--socket` (`reads.address_of`).
+    source = parser.add_mutually_exclusive_group()
     source.add_argument("--file", type=Path, help="check an export without opening a socket")
-    source.add_argument("--socket", help="the path of the daemon's socket")
+    source.add_argument("--socket", default=None, help=reads.SOCKET_HELP)
     parser.add_argument("--scope", help="the scope the question is asked in")
     parser.add_argument("--mode", choices=(PER_USER, SYSTEM), default=PER_USER)
     parser.add_argument("--daemon-user", default=None)
@@ -106,7 +112,7 @@ def _audit(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
         if arguments.scope is not None:
             parser.error("--file is not allowed with --scope")
         if arguments.from_sequence is not None or arguments.to_sequence is not None:
-            parser.error("--from and --to require --socket")
+            parser.error("--from and --to bound an online audit and are not allowed with --file")
         return _offline(arguments, out, err)
     if arguments.scope is None or arguments.from_sequence is None:
         parser.error("online audit requires --scope and --from")
@@ -114,6 +120,30 @@ def _audit(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
         parser.error("--to must be at least --from")
     arguments.page_size = 100
     return _online(arguments, out, err, history=False)
+
+
+#: The errors `pathlib` read as « not there » before Python 3.14: a missing
+#: entry, a path through something that is not a directory, a bad descriptor
+#: and a symlink loop. From 3.14 its predicates answer « no » for every error.
+_NOT_THERE: Final[frozenset[int]] = frozenset(
+    {errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP}
+)
+
+
+def _entry_mode(path: Path, *, follow: bool) -> int | None:
+    """The mode of the entry at `path`, `None` when there is none; any other failure raises.
+
+    Asked of `os` rather than of `Path.exists` or `Path.is_file`, which stopped
+    raising in Python 3.14: there a directory this process may not search
+    answers « no such file », and a name too long answers « free to use » —
+    two things this client does not know, reported as two it does.
+    """
+    try:
+        return (path.stat() if follow else path.lstat()).st_mode
+    except OSError as failure:
+        if failure.errno in _NOT_THERE:
+            return None
+        raise
 
 
 def _export(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
@@ -129,7 +159,7 @@ def _export(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
     # Reject every existing directory entry, including a dangling symlink,
     # before verifying or reading from the daemon.
     try:
-        taken = path.exists() or path.is_symlink()
+        taken = _entry_mode(path, follow=False) is not None
     except OSError as failure:
         # A path this process cannot even look at (too long, in a directory
         # it may not search) is unusable, and nothing has been asked yet.
@@ -153,7 +183,15 @@ def _export(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
         )
         if isinstance(result, Answered):
             bundle = result.value
-            contents = json.dumps(bundle, sort_keys=True, indent=2) + "\n"
+            try:
+                contents = json.dumps(bundle, sort_keys=True, indent=2) + "\n"
+            except (RecursionError, ValueError, TypeError) as failure:
+                # The bundle is saved unbounded, so this is the step a bundle
+                # nested past what the encoder can write fails in. Nothing is
+                # saved and nothing is checked: « could not check », with the
+                # reason — never a traceback, whose status 1 is « deny ».
+                err.write(f"could not save: {arguments.out}: {failure}\n")
+                return exit_codes.EXIT_COULD_NOT_CHECK
             try:
                 # Exclusive creation also refuses a path created while the
                 # read was in flight; the early check alone cannot do that.
@@ -234,7 +272,7 @@ def _exports(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
         return _could_not_check(arguments.directory, failure, arguments.json, err)
     for path in paths:
         try:
-            regular = path.is_file()
+            mode = _entry_mode(path, follow=True)
         except OSError as failure:
             # The listing was readable but the entry is not even stat-able
             # (a directory without search permission): not a bundle is not
@@ -247,7 +285,7 @@ def _exports(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
                 reason=_could_not_check_entry(path, failure, arguments, err, codes),
             )
             continue
-        if not regular:
+        if mode is None or not stat.S_ISREG(mode):
             # A directory or a dangling link named like a bundle is listed,
             # never dropped: silence here would read as « no such file ».
             _list_entry(bundles, out, path.name, as_json=arguments.json, reason=None)
@@ -328,6 +366,24 @@ def _exports(argv: Sequence[str], *, out: TextIO, err: TextIO) -> int:
     return 0
 
 
+def _grade_strength(grade: object) -> int:
+    """How strong a grade is, on the contract's own published order.
+
+    `GRADES` is the contract's vocabulary and it is published weakest first, so
+    the ordering the weakest-grade rule needs is read from the party that owns
+    it. A private list here would be a second copy of the contract's semantics
+    inside the client, free to drift from it — and drift between this client
+    and the contract about one range is exactly the defect this comparison
+    exists to close.
+
+    A value this generation does not define ranks below every value it does: an
+    unknown grade is not a stronger one, so it is never outranked by a known
+    grade and never renders as one. That is article 13's « read an unknown as
+    unknown » in the direction a weakest-grade rule has to fail.
+    """
+    return GRADES.index(grade) if grade in GRADES else -1
+
+
 def _merged_verdict(verdicts: Sequence[Mapping[str, object]]) -> dict[str, object]:
     """One served verdict for a read that spanned several pages, dropping nothing.
 
@@ -337,11 +393,19 @@ def _merged_verdict(verdicts: Sequence[Mapping[str, object]]) -> dict[str, objec
     on every earlier one, and a declared drop rendered as a clean chain is an
     absence rendered as a healthy state, which article 2 forbids.
 
-    So: declared gaps are concatenated in page order; a grade is kept per
-    connection, a later page's replacing an earlier one; and the condition is
-    `intact` only if every page said so. The first page that said otherwise is
-    the one whose verdict is reported, its `sequence`, `expected` and `found`
-    included, so that what is rendered beside the condition belongs to it.
+    So: declared gaps are concatenated in page order; a connection is graded by
+    the WEAKEST grade any page gave it, because article 7 makes the verdict's
+    grade « the weakest grade in effect over the period covered » and the period
+    a merged verdict covers is every page's; and the condition is `intact` only
+    if every page said so. The first page that said otherwise is the one whose
+    verdict is reported, its `sequence`, `expected` and `found` included, so
+    that what is rendered beside the condition belongs to it.
+
+    Keeping the LAST page's grade was this merge's own rule, not the plane's:
+    a connection the daemon graded `unverified` on page 1 and `observability`
+    on page 2 came out `observability`, so the client rendered a stronger claim
+    over the range than the contract's own verifier computes over the same
+    range — the two disagreed about one period, and the client was wrong.
 
     Every member of what comes back is a member the plane's own verifications
     carry. How many pages the answer is made of is this client's fact, not the
@@ -353,11 +417,13 @@ def _merged_verdict(verdicts: Sequence[Mapping[str, object]]) -> dict[str, objec
         verdicts[-1],
     )
     gaps: list[object] = []
-    grades: dict[object, object] = {}
+    grades: dict[object, Mapping[str, object]] = {}
     for verdict in verdicts:
         gaps.extend(verdict["declared_gaps"])
         for grade in verdict["grades"]:
-            grades[grade["connection_id"]] = grade
+            held = grades.get(grade["connection_id"])
+            if held is None or _grade_strength(grade["grade"]) < _grade_strength(held["grade"]):
+                grades[grade["connection_id"]] = grade
     merged: dict[str, object] = {**base, "declared_gaps": gaps, "grades": list(grades.values())}
     # The range members describe the whole read, not the page the condition
     # came from: a gap declared at 2 inside a verdict claiming « from 3 » would

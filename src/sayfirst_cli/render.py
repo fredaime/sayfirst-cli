@@ -85,7 +85,11 @@ def write_decision(document: Mapping[str, object], stream: TextIO) -> None:
 
 
 def write_verification(document: Mapping[str, object], stream: TextIO) -> None:
-    """What was verified about the far end, in the same words `whoami` uses."""
+    """What was verified about the far end, in the words `sayfirstd whoami` uses.
+
+    One difference, on purpose: an absent value is said here (`not stated`),
+    where that command prints Python's `None`.
+    """
     stream.write(
         f"verified: {str(document['verified']).lower()} "
         f"(server_uid {_stated(document['server_uid'])}, "

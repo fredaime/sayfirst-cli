@@ -210,6 +210,7 @@ def test_a_table_row_the_pattern_does_not_recognise_fails_the_guard(
 #: are held now.
 VERIFY_CODES: tuple[str, ...] = (
     "allow",
+    "refused",
     "could_not_ask",
     "check_failed",
     "could_not_check",

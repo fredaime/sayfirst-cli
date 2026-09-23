@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [project]
 name = "sayfirst-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "The product command-line interface of the sayfirst control plane"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -20,11 +20,11 @@ classifiers = [
 # promise made here — it is measured after an install. `sayfirst-boundary` joins
 # it because a governed program holds a grant in it (article 10); it depends on
 # the contract only, and it is not the server (article 14).
-dependencies = ["sayfirst-contract==0.2.0", "sayfirst-boundary==0.2.0"]
+dependencies = ["sayfirst-contract==0.3.0", "sayfirst-boundary==0.3.0"]
 
-# The public repository this distribution sends a reader to. It does not exist
-# yet: the repository is created fresh in the act that publishes it, and these
-# are the names the operator chose for that act. The guard
+# The public repository this distribution sends a reader to, created fresh in
+# the act that published it (2026-09-17) under the names the operator chose for
+# that act. The guard
 # `tests/test_pointers_survive_publication.py` holds them, so a rename lands
 # here and there together or not at all. No licence classifier: the licence is
 # declared as an expression above, and an index refuses a distribution that
@@ -41,7 +41,7 @@ sayfirst = "sayfirst_cli.main:run"
 dev = [
   "pytest==8.4.1",
   "ruff==0.12.12",
-  "sayfirst-contract[stub]==0.2.0",
+  "sayfirst-contract[stub]==0.3.0",
 ]
 
 [build-system]
@@ -58,7 +58,7 @@ packages = ["src/sayfirst_cli"]
 # environment built from the actual wheel and fails when one is missing. (The
 # tests cannot prove this: the gate installs this project editable, so every
 # reader they exercise resolves to the source tree.)
-include = ["src/sayfirst_cli/packs/**"]
+include = ["src/sayfirst_cli/packs/**", "src/sayfirst_cli/instrument/_bootstrap/**"]
 
 [tool.hatch.build.targets.sdist.force-include]
 "LICENSE" = "LICENSE"

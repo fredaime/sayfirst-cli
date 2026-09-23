@@ -13,15 +13,17 @@ from typing import Final, Protocol, TextIO
 
 from sayfirst_contract.client import Answered, CouldNotAsk, Refused, Result
 from sayfirst_contract.generation import CONTRACT_GENERATION
-from sayfirst_contract.problems import Problem, ProblemCode, problem_retryable
+from sayfirst_contract.problems import REFUSED, Problem, ProblemCode, problem_retryable
 from sayfirst_contract.transport.socket_client import (
     PER_USER,
     SYSTEM,
+    ProfileAddress,
     ProfileMisuse,
     SocketClientProblem,
     SocketProfile,
     VerifiedConnection,
     connect,
+    profile_address,
 )
 
 from . import exit_codes, render
@@ -44,6 +46,17 @@ whose body is JSON but not an object raises `AttributeError` inside
 « could not ask », never « denied » (articles 1 and 2) — and an escape from here
 ends the process with a traceback, exit 1, which is this client's code for deny.
 One tuple, because five copies of it is how a sixth caller comes to spell none.
+"""
+
+READ_TIMEOUT: Final[float] = 5.0
+"""How long one step of a connection to the daemon may wait, in seconds.
+
+A process that accepts a connection and then never answers held a command for
+ever: every read, and `ask`, opened a connection with no bound. Each step — the
+connect, the credential, each read — now waits at most this long, and one that
+runs past it is the control plane that could not be asked. The launcher's own
+bound on a governed effect's question (`instrument.launch.ASK_TIMEOUT`) is the
+longer of the two, because a question may wait on a policy being read.
 """
 
 DOCUMENT_DEPTH_LIMIT: Final = 64
@@ -152,10 +165,38 @@ def read[T](operation: Callable[[], Result[T]]) -> Result[T]:
         return unreadable(failure)
 
 
+SOCKET_HELP: Final = (
+    "the path of the daemon's socket; a per-user profile given none is looked for at the "
+    "per-user default address, and a system profile always names it"
+)
+"""One sentence for every verb that takes the option, so none of them says less."""
+
+
+def add_socket_argument(parser: argparse.ArgumentParser) -> None:
+    """`--socket`, optional, on every verb that opens a connection.
+
+    Optional because a per-user daemon given no address and a per-user client
+    given none read the same rule of the contract and meet at its answer. It is
+    an override the moment it is given: what a person typed is the address.
+    """
+    parser.add_argument("--socket", default=None, help=SOCKET_HELP)
+
+
+def address_of(arguments: argparse.Namespace) -> ProfileAddress:
+    """Where this invocation's profile is looked for, and whether anybody said so.
+
+    The contract's rule and nothing beside it: no environment variable of this
+    client's own, no file, no search. It raises `ProfileMisuse` for a system
+    profile that names no socket, which every caller already renders as the
+    misuse it is.
+    """
+    return profile_address(arguments.socket, arguments.mode)
+
+
 def add_connection_arguments(parser: argparse.ArgumentParser) -> None:
     """Every read names its scope explicitly, with the writer's connection options."""
     parser.add_argument("--scope", required=True, help="the scope the question is asked in")
-    parser.add_argument("--socket", required=True, help="the path of the daemon's socket")
+    add_socket_argument(parser)
     parser.add_argument("--mode", choices=(PER_USER, SYSTEM), default=PER_USER)
     parser.add_argument(
         "--daemon-user",
@@ -167,7 +208,7 @@ def add_connection_arguments(parser: argparse.ArgumentParser) -> None:
 
 def connection_problem(failure: SocketClientProblem) -> Refused | CouldNotAsk:
     """A transport exception is a non-answer, with the contract's classification."""
-    if failure.classification == "refused":
+    if failure.classification == REFUSED:
         return Refused(failure.problem)
     return CouldNotAsk(failure.problem)
 
@@ -175,8 +216,9 @@ def connection_problem(failure: SocketClientProblem) -> Refused | CouldNotAsk:
 def open_connection(arguments: argparse.Namespace, stderr: TextIO) -> VerifiedConnection | int:
     """Verify the daemon, or report why this invocation could not open a connection."""
     try:
+        address = address_of(arguments)
         profile = SocketProfile(
-            arguments.socket,
+            address.path,
             mode=arguments.mode,
             daemon_user=arguments.daemon_user,
             scope=arguments.scope,
@@ -185,14 +227,28 @@ def open_connection(arguments: argparse.Namespace, stderr: TextIO) -> VerifiedCo
         stderr.write(f"{misuse}\n")
         return exit_codes.EXIT_MISUSE
     try:
-        return connect(profile)
+        return connect(profile, timeout=READ_TIMEOUT)
     except SocketClientProblem as failure:
+        say_where_it_looked(address, arguments, stderr)
         return _write_problem(
             connection_problem(failure),
             arguments,
             render.verification_document(None, None, False),
             stderr,
         )
+
+
+def say_where_it_looked(
+    address: ProfileAddress, arguments: argparse.Namespace, stderr: TextIO
+) -> None:
+    """Name an address nobody typed, on the way to saying that it did not answer.
+
+    A reader cannot act on « unreachable » at a path they never saw. Said in
+    prose only: under `--json` the envelope is the whole of what this client
+    writes, and a sentence beside it would break the reader it was asked for.
+    """
+    if address.defaulted and not getattr(arguments, "json", False):
+        stderr.write(f"{address.looked_at()}\n")
 
 
 def finish(
@@ -211,7 +267,7 @@ def finish(
     # used: `to_document` is itself a step an unreadable answer raises inside,
     # and the render below is the step a document nested past the bound would
     # overflow. Either way the answer is one this client could not read.
-    answer = read(lambda: _bounded(result)) if isinstance(result, Answered) else result
+    answer = read(lambda: bounded(result)) if isinstance(result, Answered) else result
     if isinstance(answer, Answered):
         document = answer.value
         if arguments.json:
@@ -224,7 +280,7 @@ def finish(
     return _write_problem(answer, arguments, verification, stderr)
 
 
-def _bounded(
+def bounded(
     result: Answered[DocumentValue | Mapping[str, object]],
 ) -> Answered[Mapping[str, object]]:
     """The answer as the document about to be rendered, refused if it nests too deep."""

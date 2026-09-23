@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 
 import pytest
 from documents import arguments, entry_lines, evidence_page, problem
@@ -27,9 +28,9 @@ def replay(monkeypatch):
     def arrange(*responses):
         http = Replies(responses)
 
-        def connect(profile):
+        def connect(profile, **_):
             assert profile.scope == "local"
-            assert profile.socket_path == "daemon.sock"
+            assert profile.socket_path == os.path.abspath("daemon.sock")
             return verified(profile, http)
 
         monkeypatch.setattr(reads, "connect", connect)

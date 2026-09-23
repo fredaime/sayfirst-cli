@@ -24,17 +24,26 @@ decision preceded it. `not-exercised`: this run never walked the path. The
 third is never a pass, and this file never turns it into one — it counts events
 and writes them down; the command reads the report and decides the exit.
 
-**One thing more is written down, and it is a COUNT rather than a fourth
-word.** An event can arrive that this proof cannot judge at all: its argument
-names one of the program's own start files after the program has begun, which
-is the one shape `Watch` cannot tell from the hand-off's own reading of the
-same file. Such an event is counted on the point it would have been judged
-against and published as `unjudged`, beside a verdict that stays about the
-events that WERE judged. It is not a verdict and not one of the three words:
-every way of spelling it as one says something the run did not measure. What it
-does is refuse the run a pass — `verify` cannot answer 0 while any count is
-non-zero — which is the direction article 2 requires, and the direction this
-rule failed in for as long as the same events were silently dropped.
+**The one rule every one of those three answers to.** A point is `governed`
+only from evidence this run actually READ, actually found SOUND, and actually
+tied to the effect it watched — and only over a run it watched WHOLE. It is
+`ungoverned` only where the chain was read to its END and holds no record of
+this run's, because that word is a finding this client made and a finding needs
+the whole chain. Everything else — evidence the chain's own verification does
+not report intact, a walk that stopped half way, a record this run cannot tell
+from another execution's, an effect that reached the world along a path no point
+interposes, a fork whose child's observations are in a memory this process
+cannot read — is an INCOMPLETENESS, and an incompleteness is neither.
+
+**So one thing more is written down, and it is a COUNT rather than a fourth
+word.** Every incompleteness above is counted on the point it touches and
+published as `unjudged`, with its reason beside it, next to a verdict that stays
+about the observations that WERE judged. It is not a verdict and not one of the
+three words: every way of spelling it as one says something the run did not
+measure. What it does is refuse the run a pass — `verify` cannot answer 0 while
+any count is non-zero — which is the direction article 2 requires, and the
+direction this rule failed in for as long as each of those was silently dropped,
+counted as a pass, or published as a finding nobody had the information to make.
 
 **A fourth thing can happen, and it is not a verdict.** The chain may be
 unreadable while the program runs. « No record exists » and « this client could
@@ -70,17 +79,22 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import pwd
 import sys
 import threading
 import time
+import tomllib
+import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple
 
 from sayfirst_contract.client import Answered, Result
-from sayfirst_contract.problems import Problem, ProblemCode
+from sayfirst_contract.decisions import Outcome
+from sayfirst_contract.evidence import ChainCondition
+from sayfirst_contract.problems import Problem, ProblemCode, problem_class_of
 from sayfirst_contract.transport.socket_client import (
     ProfileMisuse,
     SocketClientProblem,
@@ -122,9 +136,68 @@ NOT_JUDGED: Final[str] = "not judged"
 UNJUDGED: Final[str] = "unjudged"
 
 #: The kind of chain entry that records an effect, and the outcome that let it
-#: happen. Both are the plane's own words, read and never translated.
-EFFECT: Final[str] = "effect"
-ALLOW: Final[str] = "allow"
+#: happen. Both are the plane's own words, read and never translated — taken
+#: from where they are published rather than spelled again here.
+EFFECT: Final[str] = pages.EFFECT
+ALLOW: Final[str] = Outcome.ALLOW.value
+
+#: What a served verification says about a range a record may be taken from.
+#: The contract publishes four conditions and exactly one of them is « the
+#: writer verified this range »; the other three are a break, a declared gap
+#: and « could not tell ». A record read out of any of those is evidence its own
+#: writer declined to stand behind, and a conclusion drawn from it would be a
+#: claim stronger than the evidence held (article 2).
+INTACT: Final[str] = ChainCondition.intact.value
+
+#: The member a point may declare naming the audit events by which an effect of
+#: its kind reaches the world along a path the point does NOT interpose.
+#: Declared by the pack, because a pack is the one place a library's vocabulary
+#: may be written down (article 4) — and read here rather than through
+#: `manifest.Point` for the reason `uninterposed_events` gives.
+UNINTERPOSED: Final[str] = "uninterposed_events"
+
+#: The member a point may declare naming, among its uninterposed events, the
+#: ones its OWN interposed call raises on the way to the effect it was asked
+#: for — the same act, reached through that call's implementation. Declared by
+#: the pack for the same reason, and read the same way (`inner_events`).
+INNER: Final[str] = "inner_events"
+
+#: What the report calls the reasons behind a point's `unjudged` count. The
+#: count is what refuses the run a pass; the reasons are what let a reader act
+#: on it, and a count with no reason is a number nobody can do anything about.
+INCOMPLETE: Final[str] = "incomplete"
+
+#: Why one observation could not be judged. Five shapes, written out rather
+#: than summarised, because « the evidence was damaged », « the walk stopped
+#: half way », « the decision may be another execution's », « the effect took a
+#: path nothing watches » and « the observation is in a child's memory » are
+#: five different facts about five different things, and a reader who is told
+#: only « 1 unjudged » cannot tell which of them happened.
+A_START_FILE: Final[str] = (
+    "an argument named one of the program's own start files after the program had started, "
+    "which this proof cannot tell from the import system finishing with that same file"
+)
+EVIDENCE_NOT_INTACT: Final[str] = (
+    "the record for this effect sits in a range the chain's own verification does not report "
+    "intact, so it is evidence the writer of the chain declined to stand behind"
+)
+ANOTHER_EXECUTIONS_RUN: Final[str] = (
+    "the record for this effect does not carry this run's correlation, so it may be a decision "
+    "another execution of this principal obtained"
+)
+WALK_INTERRUPTED: Final[str] = (
+    "the chain was read and the walk did not reach its end, so no record was found and no "
+    "absence was established either"
+)
+PATH_NOT_INTERPOSED: Final[str] = (
+    "an effect of a kind this pack names reached the world through an event no point of that "
+    "pack interposes, so this run neither judged it nor stopped it — instrumentation can miss "
+    "a call, and this is that limit counted rather than dropped"
+)
+THE_RUN_FORKED: Final[str] = (
+    "this run forked, and what a child observed lives in a memory this report was not written "
+    "from, so no point of it covers the whole run"
+)
 
 #: How long one consultation waits for the record of an effect to appear.
 #: Article 10 writes the chain asynchronously; see the module docstring for why
@@ -217,6 +290,22 @@ class ChainUnreadable(RuntimeError):
     """
 
 
+class NotJudged(RuntimeError):
+    """An effect this run could not judge, aborted rather than let through.
+
+    It is deliberately NOT the exception an ungoverned effect raises, and it
+    carries no finding: `Watched.refused` stays false and the point's verdict
+    stays about the events that WERE judged. What it leaves behind is a count
+    and a reason, which is what refuses the run a pass without inventing a
+    finding nobody made (article 2).
+
+    It is a `RuntimeError` so that a program written to survive the abort of an
+    ungoverned effect survives this one the same way: the two are one event
+    from inside the program — an effect was stopped — and differ only in what
+    this client may say about it afterwards.
+    """
+
+
 @dataclass
 class Watched:
     """One interposition point, and what this run observed about it."""
@@ -225,12 +314,24 @@ class Watched:
     point: manifest.Point
     events: int = 0
     refused: bool = False
-    #: Events on this point that this run could not judge, because an argument
-    #: named one of the program's own start files after the gate had opened —
-    #: the one shape `Watch` cannot tell from the hand-off's own reading of the
-    #: same file. Counted rather than dropped, and carried beside the verdict
-    #: rather than folded into it: the command reads it and cannot answer 0.
+    #: Observations on this point that this run could not conclude anything
+    #: from. Counted rather than dropped, and carried beside the verdict rather
+    #: than folded into it: the command reads it and cannot answer 0.
     unjudged: int = 0
+    #: Why, one sentence per distinct reason and each kept once. The count is
+    #: what the command reads; these are what a person reads.
+    reasons: list[str] = field(default_factory=list)
+
+    def not_judged(self, reason: str) -> None:
+        """Count one observation this run could not conclude anything from.
+
+        Every way of turning one of these into a verdict says something the run
+        did not measure, so none of them does: the count goes up, the reason is
+        kept, and `verify._exit_for` is what refuses the pass.
+        """
+        self.unjudged += 1
+        if reason not in self.reasons:
+            self.reasons.append(reason)
 
     @property
     def verdict(self) -> str:
@@ -265,6 +366,7 @@ class Watched:
             "verdict": self.verdict,
             "events": self.events,
             UNJUDGED: self.unjudged,
+            INCOMPLETE: list(self.reasons),
         }
 
 
@@ -369,6 +471,17 @@ class Watch:
         #: has to be able to tell « this program walked no such path » from
         #: « this proof never began watching » afterwards.
         self.ever_started = False
+        #: Whether this run forked while the program was running. A fork copies
+        #: this object, the chain's position and every `Watched`; what the child
+        #: then observes changes ITS copies, in a memory the parent that writes
+        #: the report cannot read. The parent can see that it happened, and
+        #: that is what it says (`_forked` says what it costs not to).
+        self.forked = False
+        #: Whether THIS process is such a child. It shares the parent's report
+        #: and outcome paths, and a child that wrote them would replace the
+        #: parent's findings with its own view of a run the parent is still
+        #: concluding.
+        self.in_a_forked_child = False
         self._starts: frozenset[str] = frozenset()
         self._derived: frozenset[str] = frozenset()
         self._ours = threading.local()
@@ -542,33 +655,112 @@ class Configuration:
 class Consultation:
     """What one consultation of the chain established, and what it could not.
 
-    Three outcomes rather than two, which is article 2's rule about a status
-    surface applied to a single read: a record was found, no record was found
-    in a chain that WAS read, or the chain was not read at all. Only the second
-    is a finding about the program.
+    More than two outcomes, which is article 2's rule about a status surface
+    applied to a single read. A record was found; or the chain was read to its
+    END and holds no record of this run's, which is the one outcome that is a
+    finding about the program; or the chain was not read at all; or it was read
+    in part and the walk never reached the end, which establishes nothing; or a
+    record was seen and could not be used, which establishes nothing either.
     """
 
     matched: int | None
     read_something: bool
+    #: Whether any walk inside the patience reached the chain's end. Only then
+    #: has « no record exists » been established: a walk that stopped half way
+    #: has read the part it read and says nothing about the rest, and a finding
+    #: made from it is a negative fact published on incomplete information.
+    established_absence: bool
     problem: Problem | None
+    #: A record this consultation saw and could not take, and why. Never a
+    #: finding and never a pass: it is the third value.
+    unusable: str | None
+    #: Whether a record for this capability exists in the scope that another
+    #: principal obtained. Said on the error stream, so a reader is not left
+    #: wondering why an allow they can see in the chain answered for nothing.
+    foreign: bool
 
 
 @dataclass
 class Chain:
-    """The scope's evidence, as far as this harness has consumed it.
+    """The scope's evidence, and what this run has taken from it.
 
-    The cursor is the sequence of the last entry a consultation matched. A read
-    starts after it, so one recorded effect cannot answer for two events: the
-    second consultation never sees it again.
+    **The floor never moves.** It is the position the chain had before the
+    program started, and every read begins after it. What moves instead is
+    `spent`: the sequences a consultation actually USED. A single moving cursor
+    spent everything it stepped over as well, so a record matched out of
+    decision order buried every earlier one behind it — and the effect an
+    earlier record covered was then published as a finding against a decision
+    sitting in the chain (`_matching` says what that cost).
+
+    **Whom a record has to belong to.** A record supports an effect of this run
+    only if the plane recorded it for the account this process runs as
+    (article 6: identity is the operating system's, and the peer of the
+    boundary's connection is this process). `one_execution` says whether the
+    decisions this run looks for were taken BY this run: under the shipped,
+    governed hand-off they were, so every record taken must also come from one
+    connection — the one this run's own boundary holds. Under `--ungoverned`
+    the program runs with nothing in front of it and the chain alone answers,
+    so the records were written by another execution by construction and no
+    connection may be required of them.
     """
 
     connection: VerifiedConnection
     scope: str
-    cursor: int
+    #: The position the chain had before the program started. It never moves.
+    floor: int
     #: One consultation at a time, because an audit event can arrive on any
     #: thread and two of them sharing one HTTP connection would interleave two
     #: reads on one socket.
     lock: threading.Lock = field(default_factory=threading.Lock)
+    #: The sequences consultations have USED, so one recorded effect cannot
+    #: answer for two events and a record nobody used stays reachable.
+    spent: set[int] = field(default_factory=set)
+    #: How the plane names the account this process runs as.
+    principals: frozenset[str] = field(default_factory=lambda: _this_executions_principals())
+    #: Whether this run's own boundary is what asked (see the class docstring).
+    one_execution: bool = False
+    #: The correlation this run's boundary stamped on every ask, or None under
+    #: `--ungoverned` (no boundary asked). A record must carry it to be this
+    #: run's. The shipped boundary holds one connection per grant, so a run
+    #: spans several connections and a record's connection cannot stand for its
+    #: run; this token is one value per run, known before the first record is
+    #: read, so it checks the first record too.
+    correlation: str | None = None
+
+
+def _this_executions_principals() -> frozenset[str]:
+    """How the plane names the account this process runs as, in every spelling.
+
+    The daemon builds a principal from the peer credential of the connection and
+    records it under the account's name, or under the uid where the directory
+    could not name one. Both are computed here, so a record naming either is
+    recognised and a record naming neither is somebody else's.
+
+    A lookup that cannot be made leaves the uid, which is the one spelling no
+    directory is needed for. The set is never empty: a run that could not say
+    who it is must refuse every record rather than accept them all.
+    """
+    uid = os.geteuid()
+    named = {str(uid)}
+    # A uid with no account keeps the uid, which is the spelling no directory
+    # is needed for; the set is never empty.
+    with suppress(KeyError, OSError):
+        named.add(pwd.getpwuid(uid).pw_name)
+    return frozenset(named)
+
+
+@dataclass(frozen=True)
+class Walk:
+    """One walk of the chain for one capability: what it found, and how far it got."""
+
+    matched: int | None
+    #: Whether any page was answered at all.
+    answered: bool
+    #: Whether the walk reached the chain's end, which is what an absence needs.
+    whole: bool
+    problem: Problem | None
+    unusable: str | None
+    foreign: bool
 
 
 def _write_outcome(
@@ -611,6 +803,10 @@ def _write_outcome(
     if problem is not None:
         code = problem.code
         said["problem_code"] = code.value if isinstance(code, ProblemCode) else code.raw
+        # And its class, asked of the value: the plane refusing the read and
+        # this client failing to read the answer are 3 and 4, and the same code
+        # is minted on both sides of the wire, so the code cannot say which.
+        said["problem_class"] = problem_class_of(problem)
     with suppress(OSError):
         path.write_text(json.dumps(said) + "\n", encoding="utf-8")
 
@@ -640,7 +836,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(f"{misuse}\n")
         return exit_codes.EXIT_MISUSE
     try:
-        connection = connect(configured.profile)
+        connection = connect(configured.profile, timeout=reads.READ_TIMEOUT)
     except SocketClientProblem as failure:
         # No question was ever put and no chain was ever read, so there is no
         # report to write: nothing was proven and nothing is claimed.
@@ -672,30 +868,70 @@ def _prove(
     for item in watched:
         by_event.setdefault(item.point.audit_event, []).append(item)
     watch = Watch()
-    chain = Chain(connection, configured.profile.scope, cursor=0)
+
+    def say(outcome: str, detail: str, *, problem: Problem | None = None) -> None:
+        """This run's own ending, written by the process that IS the run.
+
+        A forked child reaching one of these lines is the program's copy of this
+        harness and not a second verification: it holds the parent's paths, and
+        writing them would replace the parent's findings with a child's view of
+        a run the parent is still concluding.
+        """
+        if watch.in_a_forked_child:
+            return
+        _write_outcome(configured.outcome, outcome, detail, problem=problem)
+
+    try:
+        uninterposed = _the_paths_no_point_interposes(packs, watched)
+        inner = _the_inner_events(packs)
+    except manifest.PackInvalid as misuse:
+        # A declaration this reader cannot read is the invocation's mistake and
+        # not the program's: nothing has run and no question was ever put.
+        say(INVOCATION_REFUSED, str(misuse))
+        sys.stderr.write(f"{misuse}\n")
+        return exit_codes.EXIT_MISUSE
+    # One token for this run, generated here and handed to the boundary through
+    # the launcher, so a record the plane stamped with it is one this run
+    # produced. Only under the governed hand-off, where this run's own boundary
+    # asks; under `--ungoverned` no boundary asks and the chain alone answers.
+    correlation = f"sayfirst-verify:{uuid.uuid4()}" if configured.governed else None
+    chain = Chain(
+        connection,
+        configured.profile.scope,
+        floor=0,
+        one_execution=configured.governed,
+        correlation=correlation,
+    )
     with watch.ours():
         head = _head_of_the_chain(chain)
     if isinstance(head, Problem):
-        _write_outcome(configured.outcome, CHAIN_UNREADABLE_BEFORE, head.message, problem=head)
+        say(CHAIN_UNREADABLE_BEFORE, head.message, problem=head)
         sys.stderr.write(f"the chain could not be read, so nothing was verified: {head.message}\n")
         return exit_codes.EXIT_COULD_NOT_ASK
-    chain.cursor = head - 1
+    chain.floor = head - 1
+    # A fork copies everything this run concludes from, into a memory the
+    # process that writes the report cannot read. Registered before the hook,
+    # so that a program forking on its first line is already covered.
+    os.register_at_fork(
+        after_in_parent=lambda: _forked(watch, watched),
+        after_in_child=lambda: _in_a_forked_child(watch),
+    )
     # Installed before the hand-off — and before the engine, so an interpreter
     # that could be asked to forget a hook cannot make the proof optional. What
     # draws the line between this harness's work and the program's is the
     # ARMING, which the launcher does at the last instant (`Watch` says why).
-    sys.addaudithook(_consulting(chain, by_event, watch))
+    sys.addaudithook(_consulting(chain, by_event, uninterposed, watch, inner))
     ending: int | None = None
     refused_the_invocation = False
     try:
-        ending = _run_the_target(configured, packs, target, watch)
+        ending = _run_the_target(configured, packs, target, watch, correlation)
     except HarnessMisuse as misuse:
         # Before the hand-off every failure is this invocation's and the program
         # has not started (`launch.py` draws that line): there is nothing to
         # report about a program that never ran, and findings written anyway
         # would say `not-exercised` about a path no program was there to walk.
         refused_the_invocation = True
-        _write_outcome(configured.outcome, INVOCATION_REFUSED, str(misuse))
+        say(INVOCATION_REFUSED, str(misuse))
         sys.stderr.write(f"{misuse}\n")
         return exit_codes.EXIT_MISUSE
     except engine.EngineMisuse as misuse:
@@ -706,7 +942,7 @@ def _prove(
         # refusal `instrument run` gives the same mistake, and the command that
         # spawned this reads it off the outcome rather than off a number.
         refused_the_invocation = True
-        _write_outcome(configured.outcome, INVOCATION_REFUSED, str(misuse))
+        say(INVOCATION_REFUSED, str(misuse))
         sys.stderr.write(f"{misuse}\n")
         return exit_codes.EXIT_MISUSE
     except ChainUnreadable:
@@ -722,12 +958,16 @@ def _prove(
         # and the traceback the interpreter is about to render.
         _wait_for_the_program(chain)
         watch.disarm()
-        if not refused_the_invocation and watch.unreadable is None and watch.ever_started:
+        if (
+            not refused_the_invocation
+            and watch.unreadable is None
+            and watch.ever_started
+            and not watch.in_a_forked_child
+        ):
             with watch.ours():
                 _write_report(configured, packs, watched, head, ending, connection)
     if watch.unreadable is not None:
-        _write_outcome(
-            configured.outcome,
+        say(
             CHAIN_UNREADABLE_DURING,
             watch.unreadable.message,
             problem=watch.unreadable,
@@ -743,13 +983,13 @@ def _prove(
         # `not-exercised`, byte for byte — so a run that watched nothing at all
         # read exactly like a run that established an absence, which is the
         # distinction the rest of this file is fastidious about (article 2).
-        _write_outcome(configured.outcome, GATE_NEVER_OPENED, " ".join(target))
+        say(GATE_NEVER_OPENED, " ".join(target))
         sys.stderr.write(f"{NEVER_STARTED}\n")
-        return exit_codes.EXIT_COULD_NOT_ASK
+        return exit_codes.EXIT_COULD_NOT_CHECK
     # No detail: the only path that reads this one is a report that will not
     # parse, and the report lives in a directory the command removes before the
     # reader ever sees the sentence — a path nobody can open is worse than none.
-    _write_outcome(configured.outcome, REPORTED, "")
+    say(REPORTED, "")
     return exit_codes.EXIT_ALLOW
 
 
@@ -804,15 +1044,230 @@ def _wait_for_the_program(chain: Chain) -> None:
     Then the lock, which a consultation holds while it polls: findings written
     out from under a consultation still in flight would be findings made
     without the answer they were waiting for.
+
+    **And first of all, the callbacks the interpreter runs before it joins
+    anything.** That order is not a detail: a worker parked on an empty queue
+    is woken by a shutdown callback and by nothing else, and joining it before
+    the callback ran waits for a thread nobody has told to stop.
+    `_wake_what_the_interpreter_would_wake` says what that cost.
     """
+    _wake_what_the_interpreter_would_wake()
     _join_the_programs_threads()
     # Not guarded against an exception: `atexit` prints what a handler raised
     # and goes on to the next, exactly as the interpreter does, so there is
     # nothing here to catch that it has not already reported.
     atexit._run_exitfuncs()
+    # Again, because a handler can have started a pool of its own, exactly as
+    # the second join exists because a handler can have started a thread.
+    _wake_what_the_interpreter_would_wake()
     _join_the_programs_threads()
     with chain.lock:
         pass
+
+
+def _wake_what_the_interpreter_would_wake() -> None:
+    """Run the shutdown callbacks the interpreter runs BEFORE it joins a thread.
+
+    `threading` keeps a register of its own, separate from `atexit`, for the
+    work that has to happen while the threads are still there to be told. The
+    interpreter runs it first, then joins every non-daemon thread, and only
+    then reaches the `atexit` handlers. A pool of workers uses exactly that
+    order: its workers are parked on a queue that only its own callback puts a
+    sentinel on, and its threads are not daemons.
+
+    This function ran nowhere, and the join came first. Measured on a program
+    whose library held a pool at module scope, finished its one task and
+    returned normally: the program printed its last line, the join waited on a
+    worker nobody had woken, and the verification sat there until the command's
+    own fifteen-minute bound — reported afterwards as a run that concluded
+    nothing, about a program that had in fact finished. A library holding a
+    pool is the ordinary shape of the runtimes this chain exists to instrument.
+
+    Read off `threading` rather than kept here, and tolerated absent: this is
+    the interpreter's own register, and a build that does not publish it leaves
+    a run exactly where it was before — which is a bound rather than a hang,
+    because the command has one.
+
+    A callback's own failure is not this harness's to repair. It is suppressed
+    and the rest are run, because the interpreter would reach every one of them
+    moments later and this process has a report to write either way.
+    """
+    callbacks = getattr(threading, "_threading_atexits", None)
+    if not callbacks:
+        return
+    for call in list(callbacks):
+        with suppress(Exception):
+            call()
+
+
+def _forked(watch: Watch, watched: Sequence[Watched]) -> None:
+    """The parent's side of a fork: say that this report does not cover the run.
+
+    A fork copies the hook, the chain's position and every `Watched` into a
+    memory the parent cannot read. The child goes on being watched — it aborts
+    an effect no record covers, exactly as the parent would — and then its
+    findings end with it. Measured before this existed: a worker that met an
+    ungoverned effect, caught the abort and exited 0 was joined by a parent
+    that reported `governed`, exit 0, over a run in which an effect had been
+    refused.
+
+    Collecting a child's findings is not something this side of a fork can do.
+    Saying that they are missing is, and that is the whole of this function: one
+    count on every point, once per run, because « this report does not cover the
+    child » is one fact about the run and not one per fork.
+    """
+    if not watch.judging or watch.in_a_forked_child or watch.forked:
+        return
+    watch.forked = True
+    for item in watched:
+        item.not_judged(THE_RUN_FORKED)
+    sys.stderr.write(f"{NOT_JUDGED}: {THE_RUN_FORKED}\n")
+
+
+def _in_a_forked_child(watch: Watch) -> None:
+    """The child's side: this process is a copy and writes none of the run's files."""
+    watch.in_a_forked_child = True
+
+
+def uninterposed_events(pack: manifest.Pack) -> dict[int, tuple[str, ...]]:
+    """The paths a pack declares that it does NOT interpose, by the point declaring them.
+
+    A pack is the one place a library's vocabulary may be written down (article
+    4), so the events by which an effect of a pack's kind can reach the world
+    are the pack's to name. A point that names none claims none, and a run over
+    such a pack accounts for exactly what it did before.
+
+    **Read from the manifest here, rather than carried on `manifest.Point`.**
+    The two readers answer two questions. `manifest` reads what the ENGINE
+    installs, and this member declares precisely what no engine installs: a path
+    the pack deliberately leaves alone. Handing it to the engine's own point
+    would give the engine a member it has to ignore, and a member an engine
+    ignores is how an engine comes to install one by accident. What that costs
+    is one more read of one file, by the reader that needs it, at the start of a
+    run — and `PackInvalid` is raised for a declaration this reader cannot read,
+    so the refusal is the same refusal the same mistake gets everywhere else.
+    """
+    manifest_file = pack.directory / manifest.MANIFEST_FILE
+    try:
+        document = tomllib.loads(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError) as unreadable:
+        raise manifest.PackInvalid(
+            f"{manifest_file} does not read as a manifest: {unreadable}"
+        ) from unreadable
+    declared: dict[int, tuple[str, ...]] = {}
+    points = document.get("point")
+    if not isinstance(points, list):
+        return declared
+    interposed = {point.audit_event for point in pack.points}
+    for index, entry in enumerate(points):
+        if not isinstance(entry, dict) or UNINTERPOSED not in entry:
+            continue
+        named = entry[UNINTERPOSED]
+        if (
+            not isinstance(named, list)
+            or not named
+            or not all(isinstance(event, str) and event for event in named)
+        ):
+            raise manifest.PackInvalid(
+                f"[[point]] {index + 1} {UNINTERPOSED} is {named!r}: a point names the audit "
+                f"events by which an effect of its kind reaches the world along a path it does "
+                f"not interpose, as a non-empty list of event names — a verifier that cannot "
+                f"read them would drop the very effects it exists to account for"
+            )
+        borrowed = sorted(set(named) & interposed)
+        if borrowed:
+            raise manifest.PackInvalid(
+                f"[[point]] {index + 1} {UNINTERPOSED} names {borrowed[0]!r}, which a point of "
+                f"this pack interposes: one event is watched or it is missed, and a pack "
+                f"declaring it both ways declares nothing this verifier can act on"
+            )
+        declared[index] = tuple(dict.fromkeys(named))
+    return declared
+
+
+def inner_events(pack: manifest.Pack) -> dict[int, tuple[str, ...]]:
+    """The uninterposed events a pack declares its own interposed call raises, by point.
+
+    A call a point interposes can reach its effect through an event the same
+    pack names as a path it does not interpose — a library creating the process
+    it was asked for through a lower-level call the pack also names. Counting
+    that event would report the one act the point judged as a second act nobody
+    judged. Which events those are is the library's vocabulary, so the pack
+    names them (article 4), and `the_same_act` says when one is paired.
+
+    An inner event must be one the same point names as uninterposed: pairing
+    only ever stops a named event from being counted, and a declaration of one
+    side alone declares nothing this verifier can act on.
+    """
+    manifest_file = pack.directory / manifest.MANIFEST_FILE
+    try:
+        document = tomllib.loads(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError) as unreadable:
+        raise manifest.PackInvalid(
+            f"{manifest_file} does not read as a manifest: {unreadable}"
+        ) from unreadable
+    declared: dict[int, tuple[str, ...]] = {}
+    points = document.get("point")
+    if not isinstance(points, list):
+        return declared
+    uninterposed = uninterposed_events(pack)
+    for index, entry in enumerate(points):
+        if not isinstance(entry, dict) or INNER not in entry:
+            continue
+        named = entry[INNER]
+        if (
+            not isinstance(named, list)
+            or not named
+            or not all(isinstance(event, str) and event for event in named)
+        ):
+            raise manifest.PackInvalid(
+                f"[[point]] {index + 1} {INNER} is {named!r}: a point names the events its own "
+                f"interposed call raises on the way to its effect, as a non-empty list of event "
+                f"names"
+            )
+        stray = sorted(set(named) - set(uninterposed.get(index, ())))
+        if stray:
+            raise manifest.PackInvalid(
+                f"[[point]] {index + 1} {INNER} names {stray[0]!r}, which the same point does "
+                f"not name in {UNINTERPOSED}: pairing only stops a named event from being "
+                f"counted, so an inner event is always one of the point's uninterposed events"
+            )
+        declared[index] = tuple(dict.fromkeys(named))
+    return declared
+
+
+def _the_inner_events(packs: Sequence[manifest.Pack]) -> dict[str, frozenset[str]]:
+    """For each interposed event, the inner events of the points that interpose it."""
+    inner: dict[str, frozenset[str]] = {}
+    for pack in packs:
+        declared = inner_events(pack)
+        for index, point in enumerate(pack.points):
+            named = declared.get(index)
+            if named:
+                inner[point.audit_event] = inner.get(point.audit_event, frozenset()) | set(named)
+    return inner
+
+
+def _the_paths_no_point_interposes(
+    packs: Sequence[manifest.Pack], watched: Sequence[Watched]
+) -> dict[str, list[Watched]]:
+    """Every declared uninterposed event, against the points whose coverage it touches.
+
+    The walk is by position, because `watched` is built from the same packs in
+    the same order: a point's declaration belongs to that point's own count, and
+    an effect that slipped past one pack says nothing about another's.
+
+    """
+    uninterposed: dict[str, list[Watched]] = {}
+    at = 0
+    for pack in packs:
+        declared = uninterposed_events(pack)
+        for index in range(len(pack.points)):
+            item = watched[at]
+            at += 1
+            for event in declared.get(index, ()):
+                uninterposed.setdefault(event, []).append(item)
+    return uninterposed
 
 
 def _join_the_programs_threads() -> None:
@@ -834,6 +1289,7 @@ def _run_the_target(
     packs: Sequence[manifest.Pack],
     target: Sequence[str],
     watch: Watch,
+    correlation: str | None,
 ) -> int | None:
     """Hand the program over, in the mode the invocation asked for.
 
@@ -855,6 +1311,10 @@ def _run_the_target(
                 configured.profile,
                 list(target),
                 principal=configured.principal,
+                correlation=correlation,
+                # One recorded decision per effect is the proof, so nothing is
+                # answered from a grant: a repeated effect asks again.
+                hold_grants=False,
                 out=sys.stdout,
                 err=sys.stderr,
                 starting=watch.arm,
@@ -900,8 +1360,10 @@ def _one_page(
 ) -> Result[tuple[list[Mapping[str, object]], Mapping[str, object], int | None]]:
     """Re-open the connection, verify the far end again, and read one page.
 
-    Rule C4: the transport re-opens no address on a caller's behalf, and the
-    daemon closes the connection after some answers. Re-verifying before every
+    Rule C4: the transport re-opens no address on a caller's behalf, and a
+    daemon may close the connection after any answer — the one this client was
+    written against keeps it open after a document and closes it after a
+    stream, which is a behaviour and not a promise. Re-verifying before every
     read keeps that explicit — it is cheap over a Unix socket — and it puts the
     re-open inside the reader, so a socket that went away mid-run is a
     transport problem this client classifies rather than an exception raised
@@ -914,8 +1376,57 @@ def _one_page(
     return Answered(pages.members(result.value, from_sequence), result.contract_generation)
 
 
+class Judged(NamedTuple):
+    """The call judged last on one thread, kept for the one inner event it may raise next."""
+
+    #: The events its points name as their own call's implementation (`inner_events`).
+    inner: frozenset[str]
+    #: What its audit event carried.
+    arguments: tuple[object, ...]
+
+
+def _argument_vector(value: object) -> tuple[str, ...] | None:
+    """An argument vector as the names it holds, or `None` for a shape that is not one.
+
+    Only a list or a tuple is read. Iterating anything else could run the
+    program's own code, or use up an argument the call it belongs to was about
+    to consume — and a hook that did either would change the effect it watches.
+    """
+    if isinstance(value, str | bytes | os.PathLike):
+        value = (value,)
+    if not isinstance(value, list | tuple):
+        return None
+    try:
+        return tuple(os.fsdecode(item) for item in value)
+    except (TypeError, ValueError):
+        return None
+
+
+def the_same_act(judged: Judged, event: str, arguments: tuple[object, ...]) -> bool:
+    """Whether `event` is the implementation of the call just judged, not an act of its own.
+
+    It is when the judged call's points name it as an inner event and it carries,
+    as its second argument, the argument vector the judged call's own event
+    carried as its second — the process a spawning call was asked to create,
+    against the process the lower-level call beneath it creates. Anything else
+    is another act, and is counted as the path around the pack it is.
+
+    Which event counts as NEXT is the caller's rule, not this function's:
+    `_consulting` offers a judged call only to the very next event its thread
+    raises.
+    """
+    if event not in judged.inner or len(judged.arguments) < 2 or len(arguments) < 2:
+        return False
+    spawned = _argument_vector(arguments[1])
+    return spawned is not None and spawned == _argument_vector(judged.arguments[1])
+
+
 def _consulting(
-    chain: Chain, by_event: Mapping[str, list[Watched]], watch: Watch
+    chain: Chain,
+    by_event: Mapping[str, list[Watched]],
+    uninterposed: Mapping[str, list[Watched]],
+    watch: Watch,
+    inner: Mapping[str, frozenset[str]],
 ) -> Callable[[str, tuple[object, ...]], None]:
     """The audit hook: for an event a pack named, ask the chain and act on the answer.
 
@@ -932,9 +1443,36 @@ def _consulting(
     there; this function judges only what is left — and COUNTS what is neither
     judged nor the hand-off's, which is the one thing it may not drop
     (`Watch.whose` says what that shape is and what dropping it cost).
+
+    **An event a pack named as a path it does NOT interpose is counted and let
+    through.** It is an effect of a kind the pack names, so a report that
+    dropped it published a point's verdict — earned by the calls that DID go
+    through the interposed attribute — as if it were the whole of the run.
+    Counting it makes the coverage of that claim visibly incomplete. Stopping
+    it would do something else entirely: `instrument run` does not interpose
+    that path, so a `verify` that blocked it would be stricter than the mode it
+    measures, and this software is a governance and observability layer and not
+    a confinement mechanism (article 2). The limit that instrumentation can miss
+    a call stays exactly as true and exactly as documented; what ends is the
+    silence about it.
+
+    **Except the one its judged call raises itself.** A point may name, among
+    those events, the ones its own call raises on the way to the effect it was
+    asked for (`inner_events`). Such an event is not counted when it is the
+    VERY NEXT event the judging thread raises after the call it judged let
+    through, and `the_same_act` says it is that call's own. Next means next: a
+    thread's judged call is taken by whatever that thread raises after it, so
+    an inner event raised later, or a second one, is counted like any other.
     """
 
+    # The call judged last on each thread, taken by the next event that thread
+    # raises — whatever that event is.
+    last_judged: dict[int, Judged] = {}
+
     def consult(event: str, arguments: tuple[object, ...]) -> None:
+        # Empty unless a judged call is waiting for its next event, so every
+        # other event still costs one check here.
+        judged = last_judged.pop(threading.get_ident(), None) if last_judged else None
         if not watch.judging:
             # Either nothing has been handed over yet, or the hand-off is still
             # locating and reading the program. Both are the watch's question
@@ -942,10 +1480,17 @@ def _consulting(
             watch.opening(arguments)
             return
         points = by_event.get(event)
-        if points is None:
+        missed = uninterposed.get(event)
+        if points is None and missed is None:
             return
         whose = watch.whose(arguments)
         if whose == THE_HAND_OFFS:
+            return
+        if missed is not None and (judged is None or not the_same_act(judged, event, arguments)):
+            for item in missed:
+                item.not_judged(PATH_NOT_INTERPOSED)
+            sys.stderr.write(f"{NOT_JUDGED}: {event}: {PATH_NOT_INTERPOSED}\n")
+        if points is None:
             return
         if whose == NOT_JUDGED:
             # No chain read and no raise: nothing was established about this
@@ -953,17 +1498,32 @@ def _consulting(
             # measured. It is counted on every point the event would have been
             # judged against, which is what makes the run not a pass.
             for item in points:
-                item.unjudged += 1
+                item.not_judged(A_START_FILE)
             return
         with watch.ours():
             for item in points:
                 _judge(chain, item, watch)
+        # Judged and let through: its own inner event, if it raises one, is the
+        # next event this thread raises. A judgement that stopped the call
+        # raised above, and a call that was stopped raises nothing further.
+        named = inner.get(event)
+        if named:
+            last_judged[threading.get_ident()] = Judged(named, arguments)
 
     return consult
 
 
 def _judge(chain: Chain, item: Watched, watch: Watch) -> None:
-    """One point, against one consultation of the chain."""
+    """One point, against one consultation of the chain.
+
+    Four endings, in the one order that cannot flatter the run. A record of
+    this run's supports the effect. A chain that answered nothing ends the run
+    with « could not read » and no finding. Evidence that could not be used, or
+    a walk that never reached the chain's end, leaves the effect NOT JUDGED —
+    aborted, counted, and never a finding, because a negative fact needs the
+    whole chain read. Only what is left is a finding, and it needs the walk to
+    have finished.
+    """
     consultation = _consulted(chain, item.point.capability)
     if consultation.matched is not None:
         item.events += 1
@@ -977,15 +1537,44 @@ def _judge(chain: Chain, item: Watched, watch: Watch) -> None:
             f"{'no answer at all' if problem is None else problem.message}"
         )
     if consultation.problem is not None:
-        # Some reads were answered and the last was not. The verdict below is
-        # made of what WAS read, and the failure is said beside it rather than
+        # Some reads were answered and the last was not. What is concluded below
+        # is made of what WAS read, and the failure is said beside it rather than
         # folded into it: a reader has to be able to see that the chain went
         # away while this run was concluding.
         sys.stderr.write(
             f"the chain was read and then stopped answering: {consultation.problem.message}\n"
         )
+    unusable = consultation.unusable
+    if unusable is None and not consultation.established_absence:
+        unusable = WALK_INTERRUPTED
+    if unusable is not None:
+        _stopped_unjudged(item, unusable)
+    if consultation.foreign:
+        sys.stderr.write(
+            f"a record for {item.point.capability} exists in this scope and was recorded for "
+            f"another principal, so it is not a decision that preceded this effect\n"
+        )
     item.refused = True
     raise RuntimeError(f"{UNGOVERNED} effect: {item.point.capability} ({item.point.audit_event})")
+
+
+def _stopped_unjudged(item: Watched, reason: str) -> None:
+    """Abort an effect this run could not judge, count it, and make no finding.
+
+    The abort is the same caution an ungoverned effect gets — an effect whose
+    governance could not be established is not one this harness may let through
+    — and the silence about the program is the difference: `refused` stays
+    false, the verdict stays about the events that WERE judged, and the count
+    is what refuses the run a pass (`verify._exit_for`).
+    """
+    item.not_judged(reason)
+    sys.stderr.write(
+        f"{NOT_JUDGED}: {item.point.capability} ({item.point.audit_event}): {reason}\n"
+    )
+    raise NotJudged(
+        f"this effect is not judged and was stopped: "
+        f"{item.point.capability} ({item.point.audit_event}): {reason}"
+    )
 
 
 def _consulted(chain: Chain, capability: str) -> Consultation:
@@ -995,58 +1584,143 @@ def _consulted(chain: Chain, capability: str) -> Consultation:
     an effect the plane allowed may arrive after the effect was allowed to
     happen.
 
-    Every read that was not answered is remembered, and so is whether ANY was.
-    A consultation that read nothing at all across the whole patience has
-    established nothing about the program — not even an absence — which is why
-    that is a third outcome here and not a `False`.
+    Everything a walk could not establish is remembered across the patience, and
+    remembered SEPARATELY. A consultation that read nothing at all has
+    established nothing about the program; one whose every walk stopped half way
+    has established nothing either; one that saw a record it could not take has
+    established nothing about that record. None of the three is an absence, and
+    an absence is the only one of them that is a finding.
     """
     deadline = time.monotonic() + CHAIN_WAIT
     read_something = False
+    established_absence = False
+    foreign = False
     problem: Problem | None = None
+    unusable: str | None = None
     with chain.lock:
         while True:
-            found, answered, failure = _matching(chain, capability)
-            read_something = read_something or answered
-            if failure is not None:
-                problem = failure
-            if found is not None:
-                chain.cursor = found
-                return Consultation(found, True, None)
+            walk = _matching(chain, capability)
+            read_something = read_something or walk.answered
+            established_absence = established_absence or walk.whole
+            foreign = foreign or walk.foreign
+            if walk.problem is not None:
+                problem = walk.problem
+            if walk.unusable is not None:
+                unusable = walk.unusable
+            if walk.matched is not None:
+                return Consultation(walk.matched, True, True, None, None, foreign)
             if time.monotonic() >= deadline:
-                return Consultation(None, read_something, problem)
+                return Consultation(
+                    None, read_something, established_absence, problem, unusable, foreign
+                )
             time.sleep(POLL_INTERVAL)
 
 
-def _matching(chain: Chain, capability: str) -> tuple[int | None, bool, Problem | None]:
-    """One walk: the sequence matched, whether any page was answered, and the problem.
+def _matching(chain: Chain, capability: str) -> Walk:
+    """One walk of the chain for a record of THIS run's effect of this kind.
 
-    Nothing is inferred from a read that was not answered — not here and not in
-    the poll above, which is what carries « no read succeeded » out to the
-    caller instead of letting it look like « no record exists ».
+    Nothing is inferred from a read that was not answered, and nothing is
+    inferred from a walk that did not finish: both are carried out to the caller
+    rather than left to look like « no record exists ».
+
+    **What makes a record this effect's, and what this walk cannot establish.**
+    An entry is a candidate when it is an effect of the asked capability that
+    the plane allowed, at a position after the floor that no consultation has
+    already spent. A candidate becomes a SUPPORT only when it was recorded for
+    the account this process runs as, out of a range the chain's own
+    verification reports intact, and — where this run's own boundary is what
+    asked — on the one connection this run's records come from. Everything
+    those three refuse is said in one of two ways, and the difference matters:
+    a record of another principal is not this run's at all, so the absence of
+    one is still establishable and a finding may still be made; a record this
+    run cannot verify, or cannot tell from another execution's, leaves the
+    question open and no finding may be made from it.
+
+    **What this walk still cannot check, said here because it is the gap.** It
+    does not compare the arguments of the call with the digest the record
+    carries, so two effects of one kind, one principal and one connection are
+    not told apart. Which arguments identify an effect is the pack's
+    declaration and the boundary's digest (article 11), and a pack publishes no
+    way to render them for anything but its own wrapper — so a verifier that
+    computed one would be a second policy, drifting from the first and
+    producing findings nobody made. `docs/PACKS.md` states the limit.
     """
     answered = False
-    from_sequence = chain.cursor + 1
+    unusable: str | None = None
+    foreign = False
+    from_sequence = chain.floor + 1
     while True:
         result = reads.read(lambda at=from_sequence: _one_page(chain, at))
         if not isinstance(result, Answered):
-            return None, answered, result.problem
+            return Walk(None, answered, False, result.problem, unusable, foreign)
         answered = True
-        entries, _, next_from = result.value
+        entries, served, next_from = result.value
+        intact = served.get("condition") == INTACT
         for entry in entries:
             sequence = entry.get("sequence")
             body = entry.get("body")
             if (
-                isinstance(sequence, int)
-                and sequence > chain.cursor
-                and entry.get("kind") == EFFECT
-                and isinstance(body, Mapping)
-                and body.get("capability") == capability
-                and body.get("outcome") == ALLOW
+                not isinstance(sequence, int)
+                or sequence <= chain.floor
+                or sequence in chain.spent
+                or entry.get("kind") != EFFECT
+                or not isinstance(body, Mapping)
+                or body.get("capability") != capability
+                or body.get("outcome") != ALLOW
             ):
-                return sequence, True, None
+                continue
+            if not _recorded_for(chain.principals, entry):
+                # Somebody else's decision. Said, and stepped over: an absence
+                # of this run's own records is still an absence.
+                foreign = True
+                continue
+            if not intact:
+                unusable = unusable or EVIDENCE_NOT_INTACT
+                continue
+            if not _this_runs_correlation(chain, body):
+                unusable = unusable or ANOTHER_EXECUTIONS_RUN
+                continue
+            chain.spent.add(sequence)
+            return Walk(sequence, True, True, None, None, foreign)
         if next_from is None:
-            return None, answered, None
+            return Walk(None, answered, True, None, unusable, foreign)
         from_sequence = next_from
+
+
+def _recorded_for(principals: frozenset[str], entry: Mapping[str, object]) -> bool:
+    """Whether the plane recorded this entry for the account this process runs as.
+
+    An entry whose principal cannot be read is not read as this run's: an
+    identity this client could not establish is not an identity it may assume
+    (article 2).
+    """
+    principal = entry.get("principal")
+    if not isinstance(principal, Mapping):
+        return False
+    named = principal.get("id")
+    return isinstance(named, str) and named in principals
+
+
+def _this_runs_correlation(chain: Chain, body: Mapping[str, object]) -> bool:
+    """Whether this effect record carries the correlation this run's boundary stamped.
+
+    Asked only where this run's own boundary is what asked. The token is this
+    harness's own, generated before the program started and handed to the
+    boundary, so a record is this run's when the plane recorded that same token
+    on it — which the plane does as `correlation_source: boundary_supplied`.
+    Nothing here trusts the thing it proves: the boundary does not choose the
+    token and the harness does not read it back from a record to learn it. A
+    record whose correlation is absent, another value, or unreadable is a record
+    this run cannot tell from another execution's, and the FIRST record is held
+    to the token exactly as every later one is.
+
+    A run that stamped no token (`chain.correlation is None`) required none: that
+    is `--ungoverned`, where the chain alone answers and every record is another
+    execution's by construction.
+    """
+    if not chain.one_execution or chain.correlation is None:
+        return True
+    return body.get("correlation") == chain.correlation
 
 
 def _write_report(

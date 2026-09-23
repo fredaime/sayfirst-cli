@@ -129,15 +129,17 @@ move from **plane** to this repository, and the table above now says so with
 the article that carries each. The control plane's operator surface keeps what
 inspects its own daemon — `status`, `doctor`, `policy show|history`,
 `plugins list` — and `systems {register,retire}` stays with it under its own
-question. The decision narrows question 2 rather than overturning it: what
+question. (What it implements today is `sayfirstd status`, `whoami`,
+`plugins list` and `conformance replay`; the decision placed the others, it
+did not ship them.) The decision narrows question 2 rather than overturning it: what
 travels with the daemon is what reads the daemon's *own state*, and evidence
 outlives the process that wrote it.
 
 **The consequence, stated so that it cannot be read as costless.** This
 repository now **owes an evidence surface**. Three command families are named
-here and none of them exists: the `here` column is a debt, not an inventory,
-and until a slice lands them the table describes a repository that answers one
-command. The README's promise stops being an aspiration and becomes a
+here and, when this was decided, none of them existed: the `here` column was a
+debt, not an inventory. (All three shipped on 2026-09-15; the table above marks
+them running.) The README's promise stops being an aspiration and becomes a
 commitment with a date on it — a sentence that can now be tested against this
 repository rather than argued about. It also puts an article 13 obligation on
 this repository specifically: verifying an export must be possible with the
@@ -177,10 +179,9 @@ trees and not about any installed environment — but two wheels that both ship
 belong to the product command-line interface, which is this repository. The
 control plane's repository keeps its operator surface and renames it to the
 daemon's own form of the product name — the conventional Unix shape, where the
-daemon and the commands that inspect it share one binary — and that change is
-on a branch of that repository, dated 2026-09-05 and not merged. Until it
-merges, both trees still declare the three names and only this repository's
-claim on them is the settled one. This document's earlier position was an **assumption**, stated so
+daemon and the commands that inspect it share one binary. That change merged the
+same day (the control plane's operator command is `sayfirstd`), and only this
+repository declares the three names. This document's earlier position was an **assumption**, stated so
 it would be visible; it is now the decision, and it changes nothing in this tree
 because the assumption and the decision agree.
 

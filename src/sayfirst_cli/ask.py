@@ -24,6 +24,7 @@ from typing import Final, TextIO
 from sayfirst_contract.client import Answered, Refused
 from sayfirst_contract.decisions import DecisionAsk, Outcome
 from sayfirst_contract.generation import CONTRACT_GENERATION
+from sayfirst_contract.problems import REFUSED
 from sayfirst_contract.transport.socket_client import (
     PER_USER,
     SYSTEM,
@@ -54,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--capability", required=True, help="the kind of effect, and nothing more")
     parser.add_argument("--scope", default="local", help="the scope the question is asked in")
-    parser.add_argument("--socket", required=True, help="the path of the daemon's socket")
+    reads.add_socket_argument(parser)
     parser.add_argument("--mode", choices=(PER_USER, SYSTEM), default=PER_USER)
     parser.add_argument(
         "--daemon-user",
@@ -86,8 +87,9 @@ def main(
     arguments = build_parser().parse_args(argv)
 
     try:
+        address = reads.address_of(arguments)
         profile = SocketProfile(
-            arguments.socket,
+            address.path,
             mode=arguments.mode,
             daemon_user=arguments.daemon_user,
             scope=arguments.scope,
@@ -101,9 +103,10 @@ def main(
     declared = declared_delegation()
 
     try:
-        connection = connect(profile)
+        connection = connect(profile, timeout=reads.READ_TIMEOUT)
     except SocketClientProblem as failure:
-        could_not_ask = failure.classification != "refused"
+        reads.say_where_it_looked(address, arguments, stderr)
+        could_not_ask = failure.classification != REFUSED
         document = render.envelope(
             CONTRACT_GENERATION,
             render.verification_document(None, None, False),
@@ -133,11 +136,17 @@ def main(
         # for `deny` (articles 1 and 2). The one rule lives beside the reads.
         result = reads.read(lambda: connection.ask_decision(ask, declared))
         if isinstance(result, Answered):
-            document = render.envelope(
-                result.contract_generation, verification, result=result.value.to_document()
-            )
-            _write(document, arguments.json, stdout)
-            return _exit_for_answer(result.value.outcome)
+            # Bounded as every read is: a decision nested past what this client
+            # reads is an answer it could not read, whatever its outcome says —
+            # never a traceback, whose status 1 is this client's « deny ».
+            rendered = reads.read(lambda: reads.bounded(result))
+            if isinstance(rendered, Answered):
+                document = render.envelope(
+                    result.contract_generation, verification, result=rendered.value
+                )
+                _write(document, arguments.json, stdout)
+                return _exit_for_answer(result.value.outcome)
+            result = rendered
         could_not_ask = not isinstance(result, Refused)
         document = render.envelope(
             CONTRACT_GENERATION,

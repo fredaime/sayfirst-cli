@@ -11,3 +11,29 @@ attribute = "Popen"
 capability = "process.spawn"
 digest = ["args"]
 audit_event = "subprocess.Popen"
+# The other ways a process is created on this interpreter. This pack interposes
+# none of them — wrapping them is a different pack's job, and blocking them
+# would make `verify` a confinement mechanism — so it names them instead, and
+# the verifier counts an effect that took one of these paths as an effect it
+# could not judge rather than dropping it behind the verdict the interposed
+# attribute earned. `docs/PACKS.md` § Coverage says what the count means.
+#
+# `_posixsubprocess.fork_exec` is how `multiprocessing` starts a process, and
+# from Python 3.14 the default start method on Linux takes that path. Earlier
+# interpreters raise no event for it at all, so there it stays uncounted: the
+# documented limit, not a pass.
+uninterposed_events = [
+  "os.posix_spawn",
+  "_posixsubprocess.fork_exec",
+  "os.exec",
+  "os.spawn",
+  "os.system",
+  "os.fork",
+  "os.forkpty",
+  "pty.spawn",
+]
+# `Popen` creates the process it was asked for through the first two of those:
+# `os.posix_spawn` when it can, `_posixsubprocess.fork_exec` otherwise. Each is
+# that same act when it is the next event the calling thread raises and spawns
+# the argument vector `Popen` was given, so it is not counted a second time.
+inner_events = ["os.posix_spawn", "_posixsubprocess.fork_exec"]

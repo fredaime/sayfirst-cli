@@ -18,11 +18,15 @@ boundary's whole shape.
 
 from __future__ import annotations
 
+import atexit
 import io
 import os
+import sys
 from pathlib import Path
 
 import pytest
+from canned_daemon import answering_by_path
+from documents import no_evidence_page
 from governed_programs import (
     HELPER,
     SIBLING_MODULE_APP,
@@ -37,7 +41,7 @@ from sayfirst_contract_stub.stub import Stub
 from sayfirst_contract_stub.stub_http import serve
 
 from sayfirst_cli import exit_codes
-from sayfirst_cli.instrument import commands
+from sayfirst_cli.instrument import commands, launch
 
 
 def refuse(*argv: str) -> tuple[int, str, str]:
@@ -445,6 +449,227 @@ def test_the_argv_and_the_path_entry_are_the_programs_own(tmp_path: Path) -> Non
     assert f"head {tree}" in finished.stdout
 
 
+# --- The program's lifecycle does not end when its main module returns ---------
+
+
+#: A program that leaves work behind it. Its handler reads the two things the
+#: interpreter hands a program — the arguments it was given and the directory
+#: its own modules are found on — and it runs after the main module has
+#: returned, which is the whole point of it.
+EXIT_HANDLER_APP = """\
+import atexit
+import sys
+
+
+def at_exit():
+    print("at exit argv", sys.argv)
+    print("at exit head", sys.path[0])
+    import helper
+
+    print("at exit helper", helper.NAME)
+
+
+atexit.register(at_exit)
+print("in main argv", sys.argv)
+"""
+
+
+def a_tree_whose_exit_handler_reads_its_own_state(root: Path, name: str = "tree") -> Path:
+    """The two-file program again, with the import moved into the exit handler.
+
+    Two files rather than one for the same reason the sibling tests give: a
+    main script is found by name and never imported, so only a second file can
+    say whether the import path the handler runs on is the program's own.
+    """
+    tree = root / name
+    tree.mkdir(parents=True)
+    (tree / "app.py").write_text(EXIT_HANDLER_APP, encoding="utf-8")
+    (tree / "helper.py").write_text(HELPER, encoding="utf-8")
+    return tree
+
+
+def test_an_exit_handler_sees_the_programs_own_argv_and_imports_its_sibling(
+    tmp_path: Path,
+) -> None:
+    """A handler registered by the program is the program, and gets what the program gets.
+
+    Measured as the defect: the hand-off put the launcher's `sys.argv` and
+    `sys.path` back as soon as the main module RETURNED, which is not when the
+    program ends. The handler then read the `sayfirst` command line as its own
+    arguments and could not import the module sitting beside it — an ordinary
+    program changed by being governed, without ever asking the boundary.
+    """
+    tree = a_tree_whose_exit_handler_reads_its_own_state(tmp_path)
+    pack = plant_spawn_pack(tmp_path)
+    finished = instrument(
+        "run",
+        "--pack",
+        str(pack),
+        "--socket",
+        str(tmp_path / "absent.sock"),
+        "--scope",
+        "local",
+        "--",
+        "app.py",
+        "one",
+        cwd=tree,
+    )
+    assert finished.returncode == 0, (finished.stdout, finished.stderr)
+    # Anti-vacuity: the main module read its own arguments before the defect
+    # and reads them after it, so a test asserting only the second line would
+    # pass on a hand-off that gave the program nothing at all.
+    assert "in main argv ['app.py', 'one']" in finished.stdout
+    assert "at exit argv ['app.py', 'one']" in finished.stdout, finished.stdout
+    assert f"at exit head {tree}" in finished.stdout, finished.stdout
+    assert "at exit helper the-sibling" in finished.stdout, (finished.stdout, finished.stderr)
+    assert "Traceback" not in finished.stderr
+
+
+#: The other thing that outlives a main module: a thread the program started
+#: and did not join. It reads what the handler reads, half a second after the
+#: main module's last statement, which is the only way this moment can be
+#: timed from inside the program.
+LATE_THREAD_APP = """\
+import sys
+import threading
+import time
+
+
+def late():
+    time.sleep(0.5)
+    print("in thread argv", sys.argv)
+    import helper
+
+    print("in thread helper", helper.NAME)
+
+
+threading.Thread(target=late).start()
+print("in main argv", sys.argv)
+"""
+
+
+def test_a_thread_that_outlives_the_main_module_keeps_the_programs_own_state(
+    tmp_path: Path,
+) -> None:
+    """A thread the interpreter will wait for is the program too, and gets what it gets.
+
+    The same defect as the exit handler's and the same fix: the launcher's
+    state went back the instant the main module returned, and a thread still
+    running read the `sayfirst` command line as its arguments. The half second
+    is what makes the thread late rather than concurrent — it is the one thing
+    here that can only be timed — and a thread that ran early would read the
+    right arguments for the wrong reason, which is why the run above it asserts
+    the same claim at a moment that needs no clock.
+    """
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "app.py").write_text(LATE_THREAD_APP, encoding="utf-8")
+    (tree / "helper.py").write_text(HELPER, encoding="utf-8")
+    pack = plant_spawn_pack(tmp_path)
+    finished = instrument(
+        "run",
+        "--pack",
+        str(pack),
+        "--socket",
+        str(tmp_path / "absent.sock"),
+        "--scope",
+        "local",
+        "--",
+        "app.py",
+        "one",
+        cwd=tree,
+    )
+    assert finished.returncode == 0, (finished.stdout, finished.stderr)
+    assert "in thread argv ['app.py', 'one']" in finished.stdout, finished.stdout
+    assert "in thread helper the-sibling" in finished.stdout, (finished.stdout, finished.stderr)
+
+
+def test_the_verified_hand_off_leaves_the_exit_handler_the_programs_own_state(
+    tmp_path: Path,
+) -> None:
+    """The same claim on the path that runs the handlers itself, which is later still.
+
+    `verify` does not leave the exit handlers to the interpreter: the harness
+    runs them while its watch is still armed, after the hand-off has already
+    returned. So the restore has to outlast that too, and a fix that only
+    worked on the plain `run` path would pass the test above and fail here.
+
+    Ungoverned, and against a chain holding nothing: this test is about what
+    the program sees, not about a verdict, and the program asks the boundary
+    for nothing. Its output reaches the error stream because that is where
+    `verify` puts the program's own, keeping stdout for the answer.
+    """
+    tree = a_tree_whose_exit_handler_reads_its_own_state(tmp_path)
+    pack = plant_spawn_pack(tmp_path)
+    routes = {"/scopes/": (200, no_evidence_page())}
+    with answering_by_path(tmp_path / "d.sock", routes) as address:
+        finished = instrument(
+            "verify",
+            "--pack",
+            str(pack),
+            "--socket",
+            str(address),
+            "--scope",
+            "local",
+            "--ungoverned",
+            "--",
+            "app.py",
+            "one",
+            cwd=tree,
+        )
+    assert "in main argv ['app.py', 'one']" in finished.stderr
+    assert "at exit argv ['app.py', 'one']" in finished.stderr, finished.stderr
+    assert f"at exit head {tree}" in finished.stderr, finished.stderr
+    assert "at exit helper the-sibling" in finished.stderr, (finished.stdout, finished.stderr)
+
+
+def test_the_launchers_own_state_comes_back_once_the_program_is_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deferred is not abandoned: the last thing the register holds is the restore.
+
+    The other half of the fix, and the half a `run` through a process cannot
+    show, because the process ends on the same breath. `atexit` runs its
+    register last in, first out, so the restore is registered BEFORE the
+    program starts and every handler the program registers afterwards runs
+    ahead of it. That order is what this asserts, by standing in for the
+    register: the handlers are replayed the way the interpreter replays them,
+    and the launcher's own arguments and import path are back when the last
+    one has run.
+
+    In process, and against a stand-in for the register, because running the
+    real one here would run this test session's own handlers. The stand-in is
+    the register in both the ways the launcher uses it — what is added to it,
+    and how many things it holds — and the replay is the interpreter's own
+    order; nothing else about it is borrowed.
+    """
+    registered: list[object] = []
+
+    def register(function: object) -> object:
+        registered.append(function)
+        return function
+
+    monkeypatch.setattr(atexit, "register", register)
+    monkeypatch.setattr(atexit, "_ncallbacks", lambda: len(registered))
+    tree = a_tree_whose_exit_handler_reads_its_own_state(tmp_path, name="in-process")
+    monkeypatch.syspath_prepend(str(tree))
+    mine_argv, mine_path = list(sys.argv), list(sys.path)
+    try:
+        launch.hand_over([str(tree / "app.py"), "one"], err=io.StringIO())
+        # The program is not done, so its own state still stands.
+        assert sys.argv == [str(tree / "app.py"), "one"], sys.argv
+        # Last in, first out: the program's handler, and then the restore.
+        for callback in reversed(registered):
+            callback()  # type: ignore[operator]
+        after_argv, after_path = list(sys.argv), list(sys.path)
+    finally:
+        sys.argv[:] = mine_argv
+        sys.path[:] = mine_path
+        sys.modules.pop("helper", None)
+    assert after_argv == mine_argv
+    assert after_path == mine_path
+
+
 # --- Before the hand-off, every failure is this client's ------------------------
 
 
@@ -774,7 +999,11 @@ def test_a_missing_pack_directory_is_named_once_and_not_twice(tmp_path: Path) ->
 
 
 def test_a_package_without_a_main_is_a_misuse_not_a_traceback(tmp_path: Path) -> None:
-    """`-m json` names a package with no `__main__`: not a program to run, and not a denial."""
+    """`-m email` names a package with no `__main__`: not a program to run, and not a denial.
+
+    Not `json`, which was the example here until Python 3.14 gave it a `__main__`
+    — a package with none, on every interpreter this client supports, is `email`.
+    """
     pack = plant_spawn_pack(tmp_path)
     _, _, err = misused(
         "run",
@@ -786,10 +1015,10 @@ def test_a_package_without_a_main_is_a_misuse_not_a_traceback(tmp_path: Path) ->
         "local",
         "--",
         "-m",
-        "json",
+        "email",
         cwd=a_tree_with_a_quiet_program(tmp_path),
     )
-    assert "no `__main__` in the package 'json'" in err
+    assert "no `__main__` in the package 'email'" in err
     assert "Traceback" not in err
 
 
@@ -866,3 +1095,69 @@ def test_a_pack_naming_an_absent_attribute_on_a_later_import_is_a_misuse_not_a_t
     # the clause the test above this one covers, and this one would pass while
     # proving nothing about the clause it is named for.
     assert out == "the program started\n", "the program never ran, so this is the other clause"
+
+
+# -- an outcome the program does not handle ends with the status this client publishes
+
+
+def _run_under(tmp_path: Path, app: str, socket_path: Path) -> object:
+    tree = tmp_path / "tree"
+    tree.mkdir(exist_ok=True)
+    (tree / "app.py").write_text(app, encoding="utf-8")
+    pack = plant_spawn_pack(tmp_path)
+    return instrument(
+        "run", "--pack", str(pack), "--socket", str(socket_path), "--scope", "local",
+        "--", "app.py", cwd=tree,
+    )  # fmt: skip
+
+
+def test_a_suspension_the_program_does_not_handle_ends_with_the_suspend_status(
+    tmp_path: Path,
+) -> None:
+    """5, as `ask` says it — not the interpreter's 1, which is this client's « deny »."""
+    stub = Stub("review_approve")
+    with serve(stub, tmp_path / "d.sock") as socket_path:
+        finished = _run_under(tmp_path, SPAWNING_APP, socket_path)
+    assert finished.returncode == exit_codes.EXIT_SUSPEND, finished.stderr
+    assert "Suspended" in finished.stderr and "Traceback" in finished.stderr
+
+
+def test_a_control_plane_that_could_not_be_asked_is_not_a_denial(tmp_path: Path) -> None:
+    """Article 1: « could not ask » and « denied » never read as each other, in `$?` either."""
+    finished = _run_under(tmp_path, SPAWNING_APP, tmp_path / "absent.sock")
+    assert finished.returncode == exit_codes.EXIT_COULD_NOT_ASK, finished.stderr
+    assert "CouldNotAsk" in finished.stderr
+
+
+def test_an_unavailable_policy_is_could_not_ask_too(tmp_path: Path) -> None:
+    stub = Stub("policy_unavailable_is_could_not_ask")
+    with serve(stub, tmp_path / "d.sock") as socket_path:
+        finished = _run_under(tmp_path, SPAWNING_APP, socket_path)
+    assert finished.returncode == exit_codes.EXIT_COULD_NOT_ASK, finished.stderr
+
+
+def test_an_outcome_the_program_handles_is_the_programs_own_ending(tmp_path: Path) -> None:
+    handled = (
+        "import subprocess, sys\n"
+        "from sayfirst_boundary import Denied\n"
+        "try:\n"
+        '    subprocess.run(["true"], check=True)\n'
+        "except Denied:\n"
+        '    print("handled the denial")\n'
+        "    sys.exit(0)\n"
+    )
+    stub = Stub("deny")
+    with serve(stub, tmp_path / "d.sock") as socket_path:
+        finished = _run_under(tmp_path, handled, socket_path)
+    assert finished.returncode == 0, finished.stderr
+    assert "handled the denial" in finished.stdout
+
+
+def test_every_boundary_outcome_has_its_published_status() -> None:
+    from sayfirst_boundary import AskRefused, CouldNotAsk, Denied, Suspended
+
+    assert commands.ending_for(Denied(decision_ref="d", capability="c", reason="r")) == 1
+    assert commands.ending_for(Suspended(approval_ref="a", decision_ref="d", capability="c")) == 5
+    assert commands.ending_for(AskRefused(problem_code="p", detail="d")) == 3
+    assert commands.ending_for(CouldNotAsk(detail="d", retryable=None)) == 4
+    assert commands.ending_for(RuntimeError("the program's own")) is None

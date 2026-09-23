@@ -60,7 +60,19 @@ RETIRED_CANDIDATE = re.compile(
 
 #: The decided name with a letter welded to it — the shape a blanket substring
 #: replacement leaves behind, and the defect this project has already had.
-GLUED_NAME = re.compile("(?<![A-Za-z])" + DECIDED_NAME + "(?=[A-Za-z])", re.IGNORECASE)
+#:
+#: One welded form is a name and not that defect: the daemon's operator surface
+#: is a published command spelled with a `d` after the decided name, by the
+#: ordinary convention for a daemon's own tool, and the quickstart has to be
+#: able to tell a reader to type it. It is admitted as exactly that word — the
+#: `d` and then no letter — so that the defect it resembles (the same stem
+#: running on into a longer word) is still caught, which the planted cases
+#: below hold in both directions.
+_OPERATOR_SUFFIX = "d"
+GLUED_NAME = re.compile(
+    "(?<![A-Za-z])" + DECIDED_NAME + "(?!" + _OPERATOR_SUFFIX + "(?![A-Za-z]))" + "(?=[A-Za-z])",
+    re.IGNORECASE,
+)
 
 PATTERNS = {
     "placeholder": PLACEHOLDER,
@@ -167,6 +179,17 @@ def test_the_guard_catches_each_spelling_it_exists_to_catch(tmp_path: Path) -> N
     # The exact defect a blanket substring replacement produced in this project.
     for text in (f"{DECIDED_NAME}ory", f"{DECIDED_NAME}Ory"):
         planted.write_text(f"This field is {text}.\n", encoding="utf-8")
+        found = list(occurrences(tmp_path))
+        assert [item[1] for item in found] == ["the decided name glued into a word"], (text, found)
+
+    # The operator surface's own name is a word and is admitted; the same stem
+    # running on into a longer word is the defect again and is not.
+    operator = DECIDED_NAME + _OPERATOR_SUFFIX
+    for text in (f"{operator} status", f"`{operator}`", f"{operator}."):
+        planted.write_text(f"Type {text}\n", encoding="utf-8")
+        assert list(occurrences(tmp_path)) == [], text
+    for text in (f"{operator}aemon", f"{operator}x"):
+        planted.write_text(f"Type {text} here.\n", encoding="utf-8")
         found = list(occurrences(tmp_path))
         assert [item[1] for item in found] == ["the decided name glued into a word"], (text, found)
 

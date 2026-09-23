@@ -17,8 +17,14 @@ here is a second verifier.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Final
 
 from . import reads
+
+#: The kind of chain entry that records an effect: one of the contract's
+#: `ENTRY_KINDS`, spelled once here and held to that tuple by
+#: `tests/test_contract_words.py`.
+EFFECT: Final[str] = "effect"
 
 
 class UnreadablePage(ValueError):
@@ -59,7 +65,7 @@ def members(
         for name in ("kind", "connection_id", "entry_hash"):
             _checked(entry.get(name), str, f"{prefix}.{name}")
         body = _checked(entry.get("body"), Mapping, f"{prefix}.body")
-        if entry["kind"] == "effect":
+        if entry["kind"] == EFFECT:
             # The member `trace` reads to decide whether an entry is the one it
             # was asked about: a page that lacks it cannot answer the question.
             _checked(body.get("decision_id"), str, f"{prefix}.body.decision_id")

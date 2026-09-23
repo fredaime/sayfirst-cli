@@ -509,3 +509,60 @@ def test_a_stale_bytecode_beside_the_pack_is_never_what_runs(
     loaded = importlib.import_module(name)
     assert getattr(loaded.effect, "wrapped_by_the_pack", False) is True
     assert not getattr(loaded.effect, "from_decoy", False)
+
+
+def test_a_refused_import_refuses_again_when_the_program_retries_it(
+    tmp_path: Path, target, engine: Engine
+) -> None:
+    """The refusal is the engine's, so a retry has to meet it too.
+
+    The one refusal that surfaces inside the program's own import is the
+    program's to handle, and handling it commonly means trying the import
+    again. Measured before this rule: the first import raised, Python dropped
+    the failed module from `sys.modules`, and the points waiting for it were
+    already gone — so the finder no longer claimed the module and the SECOND
+    import succeeded entirely unwrapped, with the effect reachable and the
+    boundary never asked. A refusal that governs one import and no other is a
+    refusal that turns governance off for the module it refused.
+    """
+    name = target()
+    boundary = FakeBoundary()
+    engine.install(
+        [plant_two_point_pack(tmp_path, name, second="no_such_attribute")],
+        boundary,
+        scope="local",
+    )
+    with pytest.raises(EngineMisuse) as first:
+        importlib.import_module(name)
+    assert "no_such_attribute" in str(first.value)
+    assert name not in sys.modules
+
+    with pytest.raises(EngineMisuse) as retried:
+        importlib.import_module(name)
+    assert "no_such_attribute" in str(retried.value)
+    # Nothing of the module is reachable, so the effect cannot have been
+    # called unwrapped — and the boundary was never asked, because nothing
+    # ran that would have asked it.
+    assert name not in sys.modules
+    assert boundary.asked == []
+
+
+def test_a_deferred_install_that_succeeds_leaves_no_point_waiting(
+    tmp_path: Path, target, engine: Engine
+) -> None:
+    """The other side of keeping a refused module's points: a good install lets go.
+
+    Points kept past a successful import would leave the finder claiming a
+    module it has already wrapped, and a later re-import wrapping over work
+    this engine had already done.
+    """
+    name = target()
+    boundary = FakeBoundary()
+    engine.install([pack_for(tmp_path, name)], boundary, scope="local")
+    assert engine._awaiting(name) is True
+    loaded = importlib.import_module(name)
+    assert getattr(loaded.effect, "wrapped_by_the_pack", False) is True
+    assert engine._awaiting(name) is False
+    assert engine._awaited == {}
+    assert loaded.effect(1) == ("effect", 1, 2)
+    assert boundary.asked == [("example.action", {"first": 1})]

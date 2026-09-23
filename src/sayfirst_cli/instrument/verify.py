@@ -52,7 +52,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -60,6 +59,7 @@ from typing import Final, NamedTuple, TextIO
 
 from sayfirst_contract.generation import CONTRACT_GENERATION
 from sayfirst_contract.problems import (
+    REFUSED,
     Problem,
     ProblemCode,
     classes_by_code,
@@ -73,7 +73,7 @@ from sayfirst_contract.transport.socket_client import (
 )
 
 from .. import exit_codes, reads, render
-from . import harness, manifest
+from . import designation, harness, interpreter, manifest
 
 #: The module the harness is run as. Named here so that the one place a second
 #: interpreter is started names what it starts, and so a test can point it at
@@ -158,11 +158,20 @@ class Ending(NamedTuple):
 
     `code` is the transport's own classification of the chain read that did not
     answer, present only where there was one and the registry carries it.
+    `refused` says the control plane refused that read, which is 3 and not 4.
     """
 
     reason: str
     detail: str
     code: ProblemCode | None
+    refused: bool = False
+
+
+#: The two endings that are a chain read the contract classified. Only these
+#: carry a class; every other ending is the harness's own and keeps its code.
+_CLASSIFIED_READS: Final[frozenset[str]] = frozenset(
+    {harness.CHAIN_UNREADABLE_BEFORE, harness.CHAIN_UNREADABLE_DURING}
+)
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -171,11 +180,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--pack",
         action="append",
         required=True,
-        metavar="DIR",
-        help="a pack directory; repeat the option for each pack",
+        metavar="PACK",
+        help=designation.HELP,
     )
     parser.add_argument("--scope", required=True, help="the scope the questions are asked in")
-    parser.add_argument("--socket", required=True, help="the path of the daemon's socket")
+    reads.add_socket_argument(parser)
     parser.add_argument("--mode", choices=(PER_USER, SYSTEM), default=PER_USER)
     parser.add_argument(
         "--daemon-user",
@@ -198,12 +207,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "target",
         nargs="*",
         metavar="TARGET",
-        help="after `--`: either -m MODULE [args] or SCRIPT [args]",
+        help=interpreter.TARGET_HELP,
     )
 
 
 def run(arguments: argparse.Namespace, stdout: TextIO, stderr: TextIO) -> int:
     """Prove the program, and answer with the code the verdicts imply."""
+    directories: list[str] = []
     for named in arguments.pack:
         try:
             # Read and thrown away. The harness reads every pack again, because
@@ -211,14 +221,25 @@ def run(arguments: argparse.Namespace, stdout: TextIO, stderr: TextIO) -> int:
             # makes a pack that will not read the misuse it is, rather than a
             # verification that could not be obtained for a reason the caller
             # would have to go and guess at.
-            manifest.read_pack(Path(named))
+            #
+            # What is KEPT is the directory the designation named. The harness
+            # is handed directories and never designations: a name is resolved
+            # once, by the process a person typed it to, so the pack that is
+            # verified is the pack that was validated here.
+            directory = designation.directory_of(named)
+            manifest.read_pack(directory)
         except manifest.PackInvalid as invalid:
-            # The path as it was TYPED, for the reason `commands.py` gives.
+            # The designation as it was TYPED, for the reason `commands.py` gives.
             stderr.write(f"{named}: {invalid}\n")
             return exit_codes.EXIT_MISUSE
+        directories.append(str(directory))
     try:
+        # Resolved HERE, once, and handed to the harness as a path: the harness
+        # shares no state with this process, and two processes each working out
+        # a default is two chances to look in two places.
+        address = reads.address_of(arguments)
         SocketProfile(
-            arguments.socket,
+            address.path,
             mode=arguments.mode,
             daemon_user=arguments.daemon_user,
             scope=arguments.scope,
@@ -236,8 +257,8 @@ def run(arguments: argparse.Namespace, stdout: TextIO, stderr: TextIO) -> int:
         configuration.write_text(
             json.dumps(
                 {
-                    "packs": list(arguments.pack),
-                    "socket": arguments.socket,
+                    "packs": directories,
+                    "socket": address.path,
                     "mode": arguments.mode,
                     "daemon_user": arguments.daemon_user,
                     "scope": arguments.scope,
@@ -255,6 +276,9 @@ def run(arguments: argparse.Namespace, stdout: TextIO, stderr: TextIO) -> int:
         _harness_output(_harness(configuration, list(arguments.target)), stderr)
         document = _findings(report)
         if document is None:
+            # An address nobody typed is said on the way to saying that nothing
+            # was concluded, for the reason `reads.say_where_it_looked` gives.
+            reads.say_where_it_looked(address, arguments, stderr)
             return _no_answer(outcome_file, arguments, stdout, stderr)
         return _rendered(document, arguments, stdout, stderr)
 
@@ -278,7 +302,7 @@ def _no_answer(
     before it began » for a verification that had in fact run. Only
     `INVOCATION_REFUSED` is the invocation's mistake, and only it answers 64,
     which is the code `instrument run` gives the very same mistake; `_EXIT_FOR`
-    below says what the other endings answer, and why only one of them is not 4.
+    below says what the other endings answer, and why.
     """
     said = _outcome(outcome_file)
     if said is None:
@@ -305,18 +329,24 @@ def _no_answer(
         arguments,
         stdout,
         stderr,
-        _EXIT_FOR.get(said.reason, exit_codes.EXIT_COULD_NOT_ASK),
+        exit_codes.EXIT_REFUSED
+        if said.refused
+        else _EXIT_FOR.get(said.reason, exit_codes.EXIT_COULD_NOT_ASK),
     )
 
 
-#: The code a shell reads for the two endings that are not « the verification
-#: could not be obtained ». An invocation this client refused is the 64
-#: `instrument run` gives the same mistake; findings that exist and will not
-#: read are the 7 `_unreadable` answers for the very same sentence, and the one
-#: `docs/PACKS.md` states — with the outcome file the client now KNOWS the
-#: findings exist, which is what 7 is for. Every other ending is 4.
+#: The code a shell reads for the endings that are not « the chain could not be
+#: read ». An invocation this client refused is the 64 `instrument run` gives
+#: the same mistake. Findings that exist and will not read are the 7
+#: `_unreadable` answers for the very same sentence — with the outcome file the
+#: client KNOWS the findings exist, which is what 7 is for. A gate that never
+#: opened is 7 too: the chain was read, the plane was asked, and what could not
+#: be done was the watching, which is a check that could not conclude and not a
+#: control plane that could not be asked. The two chain endings are 4, or 3
+#: when the plane refused the read (`Ending.refused`).
 _EXIT_FOR: Final[dict[str, int]] = {
     harness.INVOCATION_REFUSED: exit_codes.EXIT_MISUSE,
+    harness.GATE_NEVER_OPENED: exit_codes.EXIT_COULD_NOT_CHECK,
     harness.REPORTED: exit_codes.EXIT_COULD_NOT_CHECK,
 }
 
@@ -339,9 +369,14 @@ def _outcome(path: Path) -> Ending | None:
     detail = document.get("detail")
     if named not in harness.OUTCOMES or not isinstance(named, str):
         return None
-    return Ending(
-        named, detail if isinstance(detail, str) else "", _carried(document.get("problem_code"))
+    code = _carried(document.get("problem_code"))
+    # Refused only on a read the contract classified, with a code the registry
+    # knows: an absent or unknown class, or a class beside the fallback code,
+    # is the fallback's « could not ask » and never the more precise answer.
+    refused = (
+        named in _CLASSIFIED_READS and code is not None and document.get("problem_class") == REFUSED
     )
+    return Ending(named, detail if isinstance(detail, str) else "", code, refused)
 
 
 def _carried(value: object) -> ProblemCode | None:
@@ -367,16 +402,33 @@ def _harness(configuration: Path, target: Sequence[str]) -> subprocess.Completed
 
     `sys.executable` rather than a name looked up on the path: the harness is
     this distribution's own module, and the interpreter that can import it is
-    the one running this command.
+    the one running this command. Where this command is itself running in an
+    interpreter a target NAMED — lent this client rather than holding it — the
+    same lending goes on to the harness, which is `interpreter.module_command`'s
+    one job: a second process starts with no finder, and would otherwise end on
+    an import error having said nothing.
 
     A timeout is not a verdict. It comes back as a run that wrote no findings,
     which this command reports as a verification that did not conclude.
+
+    **The two streams are read as bytes and decoded with replacement, and this
+    is not laxity about the report.** The target is arbitrary Python: one byte
+    no locale decodes — a `0xff` from a library's diagnostics — made
+    `subprocess.run(text=True)` raise `UnicodeDecodeError` HERE, in the parent,
+    before `_findings` had opened the report file. A verification that had run
+    to a conclusion was discarded by output that says nothing about governance,
+    and the command crashed instead of answering either its findings or an
+    explicit inability to verify. Nothing of the report travels on these
+    streams — the harness writes it to a file of its own (`_write_report`) and
+    `_findings` reads THAT, strictly — so replacement here reaches diagnostics
+    only, and a report that will not decode stays what it was: no findings, and
+    never a verdict. Decoded by `_text`, which the timeout path has always
+    used: one rule for what a program printed, not a second one.
     """
     try:
-        return subprocess.run(
-            [sys.executable, "-m", HARNESS_MODULE, str(configuration), "--", *target],
+        finished = subprocess.run(
+            interpreter.module_command(HARNESS_MODULE, str(configuration), "--", *target),
             capture_output=True,
-            text=True,
             timeout=HARNESS_TIMEOUT,
             check=False,
         )
@@ -388,10 +440,21 @@ def _harness(configuration: Path, target: Sequence[str]) -> subprocess.Completed
             stderr=_text(expired.stderr)
             + f"the program had not ended after {HARNESS_TIMEOUT:g} seconds\n",
         )
+    return subprocess.CompletedProcess(
+        finished.args,
+        returncode=finished.returncode,
+        stdout=_text(finished.stdout),
+        stderr=_text(finished.stderr),
+    )
 
 
 def _text(value: object) -> str:
-    """What a timeout kept of a stream, which may be bytes, text or nothing."""
+    """What a run or a timeout kept of a stream, which may be bytes, text or nothing.
+
+    Replacement rather than strict: these are the program's own two streams,
+    and a program is free to print bytes. Applied to diagnostics and to nothing
+    else — see `_harness` and `_findings` for the two halves of that rule.
+    """
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value if isinstance(value, str) else ""
@@ -402,6 +465,13 @@ def _findings(report: Path) -> Mapping[str, object] | None:
 
     A report that is absent and a report that will not parse are the same fact
     here — there are no findings — and neither is turned into a verdict.
+
+    **Read strictly, and deliberately so.** `_harness` decodes the program's
+    two streams with replacement, because a program is free to print bytes;
+    this file is the other channel and gets the opposite rule. Bytes that are
+    not the UTF-8 the harness wrote are not repaired into something that might
+    parse — a mangled report answers « no findings », which is an inability to
+    verify, rather than a verdict read off characters nobody wrote.
     """
     try:
         document = json.loads(report.read_text(encoding="utf-8"))
@@ -451,11 +521,22 @@ def _rendered(
             f"events={point.get('events')}"
         )
         if counted:
+            # The reasons the harness recorded for THIS point, not a sentence
+            # guessed here: a count can be made of several causes — a damaged
+            # range, a walk that stopped, a record that may be another
+            # execution's, a path nothing watches, a child's memory — and a line
+            # that always said one of them would misname the other four
+            # (article 2). Each is kept once and read off the report.
+            because = point.get(harness.INCOMPLETE)
+            reasons = (
+                "; ".join(str(reason) for reason in because)
+                if isinstance(because, list) and because
+                else "no reason was recorded, so this run cannot say why"
+            )
             lines.append(
                 f"{harness.UNJUDGED}: {counted} {point.get('pack')} {point.get('module')}."
-                f"{point.get('attribute')} {point.get('capability')} — an effect named the "
-                f"program's own start file after it had started, so this run could not "
-                f"judge it and is not a pass (article 2)"
+                f"{point.get('attribute')} {point.get('capability')} — {reasons}. This run "
+                f"could not judge it and is not a pass (article 2)"
             )
     if arguments.json:
         render.write_json(

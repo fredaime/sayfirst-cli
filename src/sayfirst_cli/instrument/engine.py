@@ -173,24 +173,38 @@ class Engine:
         self._boundary = None
         self._installed = False
 
-    def _replace(self, loaded: ModuleType, point: Point, wrapper: Wrapper) -> None:
-        """Replace one attribute of a module that has just finished loading.
-
-        The one path that can refuse after the program has started, because the
-        attribute did not exist to be absent until now.
-        """
-        original = _original_of(loaded, point)
-        setattr(loaded, point.attribute, _made(wrapper, original, point, self._boundary))
-        self._taken.append((loaded, point.attribute, original))
-
     def _awaiting(self, name: str) -> bool:
         """Whether any point is waiting for this module to be loaded."""
         return name in self._awaited
 
     def _arrived(self, name: str, loaded: ModuleType) -> None:
-        """Called by the wrapped loader, once, after the module's own body has run."""
-        for point, wrapper in self._awaited.pop(name, []):
-            self._replace(loaded, point, wrapper)
+        """Called by the wrapped loader, once, after the module's own body has run.
+
+        The one path that can refuse after the program has started, because the
+        attribute did not exist to be absent until now — so it is all or
+        nothing here for the same reason it is in `install`: every replacement
+        is made before the first attribute is replaced, and the module's points
+        stop waiting only once every one of them is in place.
+
+        A refusal therefore leaves them waiting. The import it refused is
+        removed from `sys.modules` by the interpreter, and a program that
+        catches that failure and imports again has to meet the same refusal:
+        measured before this rule, the points were dropped on the way in, the
+        finder no longer claimed the module, and the retry succeeded entirely
+        unwrapped — the refusal had turned governance off for the module it
+        refused.
+        """
+        waiting = self._awaited.get(name)
+        if waiting is None:
+            return
+        prepared: list[tuple[Point, object, object]] = []
+        for point, wrapper in waiting:
+            original = _original_of(loaded, point)
+            prepared.append((point, original, _made(wrapper, original, point, self._boundary)))
+        del self._awaited[name]
+        for point, original, replacement in prepared:
+            setattr(loaded, point.attribute, replacement)
+            self._taken.append((loaded, point.attribute, original))
 
 
 class _Finder:

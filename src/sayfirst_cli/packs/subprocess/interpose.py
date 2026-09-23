@@ -9,10 +9,12 @@ and a second point for `run` would be asking about one spawn twice.
 
 `args` — a command line as text, or the sequence `Popen` accepts rendered as a
 list of text; anything else (there should be none: `Popen`'s first argument is
-required) is rendered with `str()`, so the digest `pack.toml` declares
-(`digest = ["args"]`) is always computable — is the one argument sent to the
-boundary. Nothing else of the call is sent (article 11: what is sent is a
-digest, and which arguments it covers is declared, never implicit).
+required) is rendered with `str()` — is the one argument sent to the boundary,
+as the digest `pack.toml` declares (`digest = ["args"]`). Nothing else of the
+call is sent (article 11: what is sent is a digest, and which arguments it
+covers is declared, never implicit). One shape has no digest: a name whose
+bytes are not UTF-8 decodes to text the digest's encoding refuses, and the
+boundary answers that question « could not ask » — the process is not spawned.
 
 **As text, whatever the caller's type.** `Popen` accepts a command line as
 `str`, as `bytes`, as a `os.PathLike`, or as a sequence of any of those, and
@@ -86,5 +88,10 @@ def _text(value):
 
 
 def _pid_digest(pid):
-    """`sha256("pid:" + str(pid))`, as the manifest's `audit_event` expects to see it."""
+    """`sha256("pid:" + str(pid))`: the outcome recorded for a spawn that was let through.
+
+    Handed to the boundary's outcome log, which `instrument run` does not give
+    one — its boundary discards outcomes. The manifest declares no member for
+    them; a caller that builds a boundary with a log of its own receives this.
+    """
     return hashlib.sha256(f"pid:{pid}".encode()).hexdigest()
