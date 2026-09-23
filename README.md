@@ -90,16 +90,14 @@ $ sayfirst-daemon down        # stops the daemon `up` started, and only that one
 a person's answer, the proof, the chain read back and exported — and every
 command on that page was run, in that order, before it was written down.
 
-### What the index holds today
+### What the index holds
 
-`sayfirst-cli` 0.2.0 is on the Python index, with `sayfirst-contract`,
-`sayfirst-boundary`, `sayfirst-contract-stub` and `sayfirst-conformance`. That
-release **predates the three commands above**: it requires `--socket`, reads
-`--pack` as a directory only, and refuses `python` as the first word of a
-target. `sayfirst-control-plane` and `sayfirstd` are **not on the index** as
-this is written. Until a release carries this page, build the distributions from
-checkouts of the two repositories and install those — the quickstart's first
-section gives the three lines, and they are what its walk used.
+Everything the three commands above need is on the Python index at 0.3.0:
+`sayfirst-cli`, the `sayfirst-contract` it speaks and the `sayfirst-boundary` a
+governed program holds its grants in, and the control plane's
+`sayfirst-control-plane` and `sayfirstd`. The first command installs all five
+and builds nothing. A checkout builds the same thing — the quickstart's first
+section gives the three lines.
 
 Installed on its own, the client brings three distributions and no more: the
 command, the contract it speaks, and the boundary in which a governed program

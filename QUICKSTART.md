@@ -11,9 +11,9 @@ $ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
 ```
 
 Everything on this page was run, in this order, before it was written down: the
-commands are pasted from that run, and so are their answers. The run used
-distributions built from this tree and installed by the first command, in a
-shell with neither repository on any path, under a home directory made for it;
+commands are pasted from that run, and so are their answers. The run installed
+0.3.0 from the Python index with the first command, in a shell with neither
+repository on any path, under a home directory made for it;
 its paths are written here the way they read under an ordinary account (`~`, and
 `/run/user/1000` for the runtime directory). Your identifiers, timestamps and
 hashes will differ; the shapes will not.
@@ -49,14 +49,11 @@ other two ride on `--with-executables-from`; three separate `uv tool install`
 lines, or `pip install sayfirst-cli sayfirst-control-plane sayfirstd` in an
 environment of your own, install the same thing.
 
-**What the index holds is not yet what this page installs.** `sayfirst-cli`
-0.2.0 is on the index and predates everything below: it has no default socket,
-reads `--pack` as a path only, and refuses `python` as the first word of a
-target. `sayfirst-control-plane` and `sayfirstd` are not on the index at all as
-this is written. Until a release carries this page, install from checkouts of
-the two repositories,
+**From checkouts instead.** A contributor installs the same thing from the two
+repositories' trees,
 <https://github.com/fredaime/sayfirst-control-plane> and
-<https://github.com/fredaime/sayfirst-cli> — which is what the walk did:
+<https://github.com/fredaime/sayfirst-cli>: build the wheels, then install them
+with nothing fetched.
 
 ```console
 $ (cd /path/to/sayfirst-control-plane && uv build --all-packages --wheel --out-dir ~/wheels)
@@ -64,9 +61,9 @@ $ (cd /path/to/sayfirst-cli && uv build --wheel --out-dir ~/wheels)
 $ uv tool install --no-index --find-links ~/wheels sayfirst-cli --with-executables-from sayfirst-control-plane --with-executables-from sayfirstd
 ```
 
-`--no-index` keeps the install to the wheels you built: nothing is fetched, so
-what runs is exactly those two trees — and two of the five distributions are
-not on the index to be fetched anyway.
+`--no-index` keeps the install to the wheels you built: the index carries the
+same version numbers, and an installer allowed to look there could take the
+published files instead of your trees.
 
 ## 2. Start a control plane
 
@@ -82,7 +79,7 @@ grade re-evaluation interval: 30 seconds
 privacy provider: none (captured content is recorded as given)
 evidence emission: delivering
 log: ~/.sayfirst/quickstart/daemon.log
-pid: 1622067
+pid: 2174481
 wrote: ~/.sayfirst/quickstart/policy.toml
 wrote: ~/.sayfirst/quickstart/daemon.toml
 stop: sayfirst-daemon down
@@ -195,11 +192,11 @@ grade re-evaluation interval: 30 seconds
 privacy provider: none (captured content is recorded as given)
 evidence emission: delivering
 $ sayfirst evidence history --scope local --from 1 --all
-1 composition daemon 2b12918b5588b2e3b50efa80fb7035ead2d2579537d991118f92b05bc0c0cfb3
-2 grade b5b86aba-5d1b-4b47-8059-38783a488547 7f6c25dfac3eac4ee6174aff24630eaf8f8804d96436a0daf160644e8195806f
-3 grade 7750b836-8ee2-4d2b-8de5-2c9d96b16e75 ca6a3b37ba461f63b70ae8b6d16641c4b1d446be7fbb428a9d50db38c2c55d1e
-4 grade 0db649e3-d5c9-4145-b05a-feb2ed6c1344 23ca566a49a282624fc21c1a65f467c2d437350682d0ad6dfe131e429f76fdc7
-5 effect 0db649e3-d5c9-4145-b05a-feb2ed6c1344 13776e23385f7a6fa0aff7a01af3a3e090ea3be27a7e9aeab83f93cb09dee791
+1 composition daemon 9d91e37895f3f3ec5ddd99313eba86113a35d3e54926fa3364b1a2910993a35b
+2 grade 8af0e4a3-1e36-4956-b3e3-945061fcb86d f81ccada8136e2565f2223af93da4f443113c2897f6797048313968ccbef81e5
+3 grade cbe53213-4868-457a-a5bb-5703741ff248 2a02c37627ae178fa795d58cf76bf337905cc2f430938ae6b3aa2fb941779d55
+4 grade cc16640d-1aa0-4c92-82ba-28e8aba91983 3848a18e49c31896304fd5114ced98de3a250f4fce83e249c6053716d95359b4
+5 effect cc16640d-1aa0-4c92-82ba-28e8aba91983 c96ec3c3fbdf3cb861b93fca81887ad69a6ed151805b6e04dca9ef82405fdea1
 …
 next_from: none
 ```
@@ -216,7 +213,7 @@ is restarted; the daemon reads the file when it decides.
 $ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
 Traceback (most recent call last):
   …
-sayfirst_boundary.errors.Denied: denied: process.spawn (policy_denies, 48293af4-5ab0-4c92-b16b-f0ca974a490b)
+sayfirst_boundary.errors.Denied: denied: process.spawn (policy_denies, 3f25749a-3e1a-4f73-b7e8-34bba22d0010)
 $ echo $?
 1
 ```
@@ -234,7 +231,7 @@ Now `outcome = "suspend"`:
 $ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
 Traceback (most recent call last):
   …
-sayfirst_boundary.errors.Suspended: suspended: process.spawn awaits approval 55fc6d74-275b-4250-9a7f-58871bfc5bf1
+sayfirst_boundary.errors.Suspended: suspended: process.spawn awaits approval 22f85fcb-fdab-4802-bde7-d26eed599fb7
 $ echo $?
 5
 ```
@@ -242,21 +239,21 @@ $ echo $?
 Nothing ran, and a person is being waited for. Read the wait, then end it:
 
 ```console
-$ sayfirst approvals show --approval 55fc6d74-275b-4250-9a7f-58871bfc5bf1 --scope local
-approval: 55fc6d74-275b-4250-9a7f-58871bfc5bf1
-decision: 45faca76-852a-4991-a5fb-bc2190e42325
+$ sayfirst approvals show --approval 22f85fcb-fdab-4802-bde7-d26eed599fb7 --scope local
+approval: 22f85fcb-fdab-4802-bde7-d26eed599fb7
+decision: 46c2447e-ac2a-40d8-bfc6-87340d21dd0f
 state: pending
-requested_at: 2026-09-23T02:05:45.453931Z
-deadline: 2026-09-23T02:10:45.453931Z
+requested_at: 2026-09-23T18:58:32.922810Z
+deadline: 2026-09-23T19:03:32.922810Z
 resolved_at: not stated
 reason: not stated
-$ sayfirst approvals approve --approval 55fc6d74-275b-4250-9a7f-58871bfc5bf1 --scope local --reason "checked by hand"
-approval: 55fc6d74-275b-4250-9a7f-58871bfc5bf1
-decision: 45faca76-852a-4991-a5fb-bc2190e42325
+$ sayfirst approvals approve --approval 22f85fcb-fdab-4802-bde7-d26eed599fb7 --scope local --reason "checked by hand"
+approval: 22f85fcb-fdab-4802-bde7-d26eed599fb7
+decision: 46c2447e-ac2a-40d8-bfc6-87340d21dd0f
 state: approved
-requested_at: 2026-09-23T02:05:45.453931Z
-deadline: 2026-09-23T02:10:45.453931Z
-resolved_at: 2026-09-23T02:05:45.642267Z
+requested_at: 2026-09-23T18:58:32.922810Z
+deadline: 2026-09-23T19:03:32.922810Z
+resolved_at: 2026-09-23T18:58:33.083390Z
 reason: checked by hand
 person: user:you
 $ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
@@ -296,7 +293,7 @@ alone on stdout.
 
 ```console
 $ sayfirst-daemon down
-SayFirst Control Plane stopped (pid 1622067)
+SayFirst Control Plane stopped (pid 2174481)
 policy and evidence are kept under ~/.sayfirst/quickstart
 ```
 
@@ -352,22 +349,22 @@ verified: true (server_uid 1000, expected 1000)
 outcome: allow
 reason: policy_allows
 capability: process.spawn in scope local
-decision: 52ff1ab5-8813-4230-9ca4-2f272612c64d at 2026-09-23T02:05:47.180188Z
+decision: 69717b64-c77f-4743-ab47-05b388c04d82 at 2026-09-23T18:58:34.376397Z
 policy version: sha256:efc1746cea9b50cb31aa5c9f08de996cbefabc34a09d4250d8b68f67c709a5dc
 $ sayfirst ask --capability net.egress
 verified: true (server_uid 1000, expected 1000)
 outcome: suspend
 reason: policy_requires_review
 capability: net.egress in scope local
-decision: 5cb90b68-bb1a-4674-ae2d-97a1bd9c5797 at 2026-09-23T02:05:47.255248Z
+decision: 8d78b0a9-b383-4823-ade0-2c13776f112e at 2026-09-23T18:58:34.443382Z
 policy version: sha256:efc1746cea9b50cb31aa5c9f08de996cbefabc34a09d4250d8b68f67c709a5dc
-approval: d058eee2-4ecc-488c-837d-037e206c1247
+approval: 51396cbc-0c8c-40b8-ab82-5fd3c9b7fbde
 $ sayfirst ask --capability database.open
 verified: true (server_uid 1000, expected 1000)
 outcome: deny
 reason: policy_absent
 capability: database.open in scope local
-decision: c6284ad7-f77b-4367-a50d-977489e2f6f7 at 2026-09-23T02:05:47.335332Z
+decision: 0bee18d1-5649-4066-b6b2-5242e53c1eaa at 2026-09-23T18:58:34.516186Z
 policy version: sha256:efc1746cea9b50cb31aa5c9f08de996cbefabc34a09d4250d8b68f67c709a5dc
 ```
 
@@ -379,18 +376,18 @@ rule saying no.
 One decision, explained in the daemon's own words and traced into the chain:
 
 ```console
-$ sayfirst explain --scope local --decision 474856fc-e891-46ac-844c-efa30cc9322f
-decision_ref: 474856fc-e891-46ac-844c-efa30cc9322f
+$ sayfirst explain --scope local --decision 7fafc3e7-e079-4d6f-a170-6c3863ca647b
+decision_ref: 7fafc3e7-e079-4d6f-a170-6c3863ca647b
 scope: local
 capability: process.spawn
 outcome: allow
 reason: policy_allows
 rule_id: local-processes-run
 policy_version: sha256:efc1746cea9b50cb31aa5c9f08de996cbefabc34a09d4250d8b68f67c709a5dc
-decided_at: 2026-09-23T02:05:47.410354Z
+decided_at: 2026-09-23T18:58:34.585650Z
 …
-$ sayfirst trace --scope local --decision 474856fc-e891-46ac-844c-efa30cc9322f | tail -1
-chain: sequence 34, entry_hash 0d00934b16b3dc0004d7e13c884b83aec61a79dfb6d43278dab3530d1f8250d7, grade observability
+$ sayfirst trace --scope local --decision 7fafc3e7-e079-4d6f-a170-6c3863ca647b | tail -1
+chain: sequence 34, entry_hash 087c81168d9cd193456251c3928c93752cec6ddb4b247c6f0808778d9d627d98, grade observability
 ```
 
 Every read is itself recorded: `history`, `explain`, `trace` and `export` each
