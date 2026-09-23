@@ -11,6 +11,8 @@ are, and nothing imports a fixture out of a neighbouring test module.
 
 from __future__ import annotations
 
+import os
+import pwd
 from collections.abc import Mapping
 from copy import deepcopy
 
@@ -193,6 +195,33 @@ def no_evidence_page(*, from_sequence: int = 1) -> dict[str, object]:
     }
 
 
+#: The principal a record carries when it was NOT recorded for the execution
+#: under proof. A name no account on any host is spelled with, so that « this
+#: record is somebody else's » is a property of the fixture and never an
+#: accident of whoever runs the suite.
+ANOTHER_ACCOUNT: dict[str, object] = {"kind": "user", "id": "another-account!", "via": []}
+
+#: The connection a record carries when another execution asked for it. The
+#: daemon gives one connection one identifier, so two executions never share it.
+ANOTHER_EXECUTION = "another-execution"
+
+
+def this_executions_principal() -> dict[str, object]:
+    """The principal the daemon records for a connection from THIS process.
+
+    Article 6: identity is the operating system's, and the daemon builds the
+    principal from the peer credential of the connection — the account this
+    process runs as. A fixture claiming to be a record of the run under proof
+    has to carry that identity, because that is the one thing about a record
+    which says the run under proof is the run it was recorded for.
+    """
+    try:
+        name: object = pwd.getpwuid(os.geteuid()).pw_name
+    except KeyError:  # pragma: no cover - a uid with no account
+        name = str(os.geteuid())
+    return {"kind": "user", "id": name, "via": []}
+
+
 def recorded_effect_page(
     capability: str,
     *,
@@ -201,12 +230,27 @@ def recorded_effect_page(
     from_sequence: int = 1,
     next_from: int | None = None,
     count: int = 1,
+    principal: Mapping[str, object] | None = None,
+    connection_id: str = "connection-1",
+    condition: str | None = None,
 ) -> dict[str, object]:
-    """A page holding recorded effects, which is what the verifier reads.
+    """A page holding recorded effects of the execution under proof.
 
-    The verifier matches an `effect` entry by its body's capability and
-    outcome, so those two are the members this varies; everything else is the
-    contract's published example of an entry and of a page.
+    **What this fixture carries, and why it is not two members.** It varied
+    exactly the two members the matcher consumed — the body's capability and
+    its outcome — and so it could not see the defect that the matcher consumed
+    only those two: a record of another execution, another principal and
+    another call satisfied every success fixture in this repository. The
+    invariant that replaces « vary what the matcher reads » is « a success
+    fixture carries the identity of the execution under proof »: by default the
+    principal this process would be recorded as, and one connection identifier.
+    `ANOTHER_ACCOUNT` and `ANOTHER_EXECUTION` are what a record of somebody
+    else looks like, and a fixture built from either is not a success fixture.
+
+    `condition` overrides what the served verification says about the range the
+    record sits in. The default is the contract's own example, which reports the
+    chain intact; a page reporting anything else is evidence this client may not
+    take a record from, and saying so is this argument's whole purpose.
 
     `count` puts several records of the one capability on the page, from
     `sequence` upwards. A test that has to prove the verifier counted the
@@ -220,6 +264,8 @@ def recorded_effect_page(
             **examples["evidence-entry"],
             "sequence": sequence + offset,
             "entry_hash": f"{sequence + offset:064d}",
+            "connection_id": connection_id,
+            "principal": dict(this_executions_principal() if principal is None else principal),
             "body": {
                 **examples["evidence-entry"]["body"],
                 "capability": capability,
@@ -229,20 +275,39 @@ def recorded_effect_page(
         for offset in range(count)
     ]
     last = sequence + count - 1
+    verification = {
+        **examples["evidence-verdict"],
+        "from_sequence": from_sequence,
+        "to_sequence": last,
+        "up_to": last,
+    }
+    if condition is not None:
+        verification["condition"] = condition
+        verification["sequence"] = sequence
     return {
         **examples["evidence-page-result"],
         "contract_version": str(CONTRACT_GENERATION),
         "from_sequence": from_sequence,
-        "to_sequence": last,
         "entries": entries,
-        "verification": {
-            **examples["evidence-verdict"],
-            "from_sequence": from_sequence,
-            "to_sequence": last,
-            "up_to": last,
-        },
+        "to_sequence": last,
+        "verification": verification,
         "next_from": next_from,
     }
+
+
+def another_executions_effect_page(capability: str, **changes: object) -> dict[str, object]:
+    """The same page, recorded for another principal on another connection.
+
+    Nothing about it says it is this run's, which is the whole of it: a
+    verifier that reports `governed` from this page has proven that a decision
+    exists somewhere, never that one preceded the effect it watched.
+    """
+    return recorded_effect_page(
+        capability,
+        principal=ANOTHER_ACCOUNT,
+        connection_id=ANOTHER_EXECUTION,
+        **changes,  # type: ignore[arg-type]
+    )
 
 
 def foreign_generation_page(*, from_sequence: int = 1) -> dict[str, object]:

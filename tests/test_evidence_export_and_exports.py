@@ -64,9 +64,9 @@ def daemon(request, tmp_path, monkeypatch):
         else:
             http = Replies([(status, document)])
 
-            def connect(profile):
+            def connect(profile, **_):
                 assert profile.scope == "local"
-                assert profile.socket_path == "daemon.sock"
+                assert profile.socket_path == os.path.abspath("daemon.sock")
                 return verified(profile, http)
 
             monkeypatch.setattr(reads, "connect", connect)
@@ -297,8 +297,10 @@ def test_export_rejects_invalid_ranges(tmp_path, no_socket, extra):
     assert failure.value.code == 2
 
 
-@pytest.mark.parametrize("missing", ["--scope", "--socket", "--from", "--out"])
+@pytest.mark.parametrize("missing", ["--scope", "--from", "--out"])
 def test_export_requires_its_arguments(tmp_path, no_socket, missing):
+    # `--socket` left this list when a per-user profile given none began to be
+    # looked for at the per-user default address (`tests/test_default_socket.py`).
     arguments = list(export_arguments(tmp_path / "out.json", "absent.sock"))
     index = arguments.index(missing)
     del arguments[index : index + 2]
@@ -332,7 +334,7 @@ def test_export_checks_the_received_object_after_saving_without_rereading(tmp_pa
     monkeypatch.setattr(
         reads,
         "connect",
-        lambda profile: verified(profile, http),
+        lambda profile, **_: verified(profile, http),
     )
     monkeypatch.setattr(VerifiedConnection, "export_evidence", read)
     monkeypatch.setattr(evidence, "verify_export", verify)
@@ -363,7 +365,7 @@ def test_export_never_overwrites_a_file_created_during_the_read(tmp_path, monkey
     monkeypatch.setattr(
         reads,
         "connect",
-        lambda profile: verified(profile, http),
+        lambda profile, **_: verified(profile, http),
     )
     code, stdout, stderr = run(*export_arguments(path, "daemon.sock"))
     assert code == exit_codes.EXIT_MISUSE
@@ -676,3 +678,30 @@ def test_export_finishes_against_a_daemon_that_closes_after_its_answer(tmp_path)
     assert code == exit_codes.EXIT_COULD_NOT_CHECK
     assert f"saved: {path} (3 entries)\n" in stdout
     assert stderr == ""
+
+
+def test_a_bundle_that_cannot_be_written_is_could_not_check_not_a_traceback(
+    tmp_path, daemon, monkeypatch
+):
+    """The bundle is saved unbounded, so the step that writes it is the one that can fail.
+
+    On an interpreter whose indenting encoder recurses, a bundle nested deep
+    enough exhausted it inside the save, and the export ended in a traceback
+    with status 1 — this client's « deny ». Forced here on every interpreter.
+    """
+    from sayfirst_cli import evidence
+
+    path = tmp_path / "saved.json"
+    real_dumps = evidence.json.dumps
+
+    def recursing(document, **options):
+        if options.get("indent"):
+            raise RecursionError("maximum recursion depth exceeded while encoding a JSON object")
+        return real_dumps(document, **options)
+
+    with daemon(200, bundle()) as (address, _):
+        monkeypatch.setattr(evidence.json, "dumps", recursing)
+        code, stdout, stderr = run(*export_arguments(path, address))
+    assert code == 7, (stdout, stderr)
+    assert "could not save" in stderr
+    assert not path.exists()

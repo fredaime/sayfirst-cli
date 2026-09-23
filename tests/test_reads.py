@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -29,9 +30,9 @@ def replay(monkeypatch):
     def arrange(*responses):
         http = Replies(responses)
 
-        def connect(profile):
+        def connect(profile, **_):
             assert profile.scope == "team-ops"
-            assert profile.socket_path == "daemon.sock"
+            assert profile.socket_path == os.path.abspath("daemon.sock")
             return verified(profile, http)
 
         monkeypatch.setattr(reads, "connect", connect)
@@ -203,7 +204,7 @@ def test_open_failure_is_a_could_not_ask_whatever_the_code(
     expected = 4
     from sayfirst_cli import reads
 
-    def fail(profile):
+    def fail(profile, **_):
         raise SocketClientProblem(
             Problem(problem_code, "no connection", False, CONTRACT_GENERATION)
         )

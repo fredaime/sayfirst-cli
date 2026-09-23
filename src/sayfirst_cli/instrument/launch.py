@@ -37,11 +37,13 @@ the interpreter itself would write.
 
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import os
 import pwd
 import runpy
 import sys
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib.machinery import ModuleSpec
@@ -52,6 +54,7 @@ from sayfirst_boundary import Boundary
 from sayfirst_contract.binding.http_unix_socket.client import SocketClient
 from sayfirst_contract.transport.socket_client import SocketProfile, expected_principal_uid
 
+from . import follow
 from .engine import Engine, EngineMisuse
 from .manifest import Pack
 
@@ -62,6 +65,12 @@ ASK_TIMEOUT: Final[float] = 10.0
 #: The spelling that names a module rather than a file, taken from the
 #: interpreter rather than invented, so that one form is typed one way.
 MODULE_FORM: Final[str] = "-m"
+
+#: The head of the import path in an interpreter this command was handed to:
+#: the hand-over's bootstrap puts it there, and `_hand_off` replaces it with
+#: what that interpreter would have put there for the program. It names no
+#: directory, so nothing can be imported from it in the meantime.
+HANDED_OVER_HEAD: Final[str] = "<sayfirst: the launcher replaces this entry>"
 
 #: What a caller is told at the last instant before the hand-off: which files
 #: are the program's OWN, which the hand-off reads to reach them, and which of
@@ -115,6 +124,9 @@ def run(
     target: Sequence[str],
     *,
     principal: str | None = None,
+    correlation: str | None = None,
+    follow_children: bool = False,
+    hold_grants: bool = True,
     out: TextIO,
     err: TextIO,
     starting: Starting | None = None,
@@ -137,6 +149,12 @@ def run(
     after everything this launcher does for itself — the engine's load of each
     pack's execution module included. A caller that has to tell its own work
     from the program's cannot draw that line from outside.
+
+    `hold_grants=False` asks for every effect and holds no grant. The verifier
+    runs this way: its proof is one recorded decision for each effect it saw,
+    and a grant hit — an identical effect answered by an earlier allow, which is
+    what `run` does (article 10) — records nothing, so a repeated effect would
+    read as ungoverned.
     """
     program = _the_program(list(target))
     client = SocketClient(
@@ -144,7 +162,15 @@ def run(
         expected_uid=expected_principal_uid(profile),
         timeout=ASK_TIMEOUT,
     )
-    boundary = Boundary(client=client, principal_reference=principal or _this_account())
+    boundary = Boundary(
+        client=client,
+        principal_reference=principal or _this_account(),
+        # Set only by the verifier, which stamps one run and matches records on
+        # it (`harness.py`). The launcher's own governed mode leaves it None: a
+        # run is not a proof, and nothing reads a correlation back from it.
+        correlation=correlation,
+        hold_grants=hold_grants,
+    )
     try:
         # The engine is deliberately not kept: the interposition's scope is this
         # process, and `uninstall` exists for a caller that wants it back
@@ -154,7 +180,42 @@ def run(
         # The pack was designated on the command line, so a pack the engine
         # refuses is this invocation's mistake and not the program's failure.
         raise LaunchMisuse(str(refused)) from refused
+    if follow_children:
+        # Arranged in THIS process's environment, right before the program
+        # starts, so every Python child the program spawns installs the same
+        # boundary before its own code runs (`follow.py`). Set here rather than
+        # earlier so it is not inherited by anything this launcher spawns for
+        # itself; the program is the only thing started after this.
+        os.environ.update(
+            follow.environment_for(
+                os.environ,
+                list(packs),
+                socket=profile.socket_path,
+                scope=profile.scope,
+                mode=profile.mode,
+                daemon_user=profile.daemon_user,
+                principal=principal,
+            )
+        )
     return _hand_off(program, err, starting)
+
+
+def _the_head_for(program: Program) -> list[str]:
+    """What the interpreter would have put at the head of the import path for the program.
+
+    Its directory — for `-m`, the working directory — unless the person asked
+    for a safe path (`-P`, `PYTHONSAFEPATH`), which puts nothing there. In this
+    command's own interpreter the head is then an entry of the person's own,
+    and it is kept: replacing it took a real directory off the path and the
+    program's import of it failed. Handed over, the flag is the hand-over's own
+    `-P`, the head is its placeholder, and the person's setting is read off the
+    environment that interpreter was given.
+    """
+    if sys.path and sys.path[0] == HANDED_OVER_HEAD:
+        return [] if os.environ.get("PYTHONSAFEPATH") else [program.first_on_the_path]
+    if sys.flags.safe_path:
+        return sys.path[:1]
+    return [program.first_on_the_path]
 
 
 def hand_over(target: Sequence[str], *, err: TextIO, starting: Starting | None = None) -> int:
@@ -172,14 +233,26 @@ def hand_over(target: Sequence[str], *, err: TextIO, starting: Starting | None =
     return _hand_off(_the_program(list(target)), err, starting)
 
 
-def _this_account() -> str:
+def this_account() -> str:
     """Who this process is, in the one spelling the boundary uses for a person.
 
     Never sent as a credential: the daemon establishes identity from the peer of
     the connection (article 6). This is what the holder compares a grant's own
-    condition against, locally.
+    condition against, locally. Public because a followed child builds its own
+    boundary and needs the same spelling this one uses (`follow.py`).
+
+    A uid no account database names — a container started under an arbitrary
+    uid — is spelled by its number, which is how the daemon names such a peer.
     """
-    return f"user:{pwd.getpwuid(os.geteuid()).pw_name}"
+    uid = os.geteuid()
+    try:
+        return f"user:{pwd.getpwuid(uid).pw_name}"
+    except KeyError:
+        return f"user:{uid}"
+
+
+#: Kept for readers inside this module.
+_this_account = this_account
 
 
 def _the_program(target: list[str]) -> Program:
@@ -218,8 +291,33 @@ def _hand_off(program: Program, err: TextIO, starting: Starting | None = None) -
     the program for the form it was named in — the script's own directory, or
     the working directory for `-m` — because a governed program is the same
     program, and one that cannot import the module beside it is not being
-    governed, it is being broken. Both are put back afterwards, so nothing here
-    outlives the run.
+    governed, it is being broken.
+
+    **They are put back when the PROGRAM ends, which is not when its main
+    module returns.** A handler it registered to run at exit, and a thread it
+    started and did not join, are both the program's own code and both run
+    afterwards; under verification later still, because the harness runs them
+    itself rather than leaving them to the interpreter. Measured as the defect:
+    a handler reading `sys.argv` was handed the `sayfirst` command line instead
+    of the program's arguments, and `import` of the module beside the program
+    raised `ModuleNotFoundError` — an ordinary program changed by being
+    governed, over something it never asked the boundary about.
+
+    So the restore is registered with `atexit` BEFORE the program starts, and
+    `atexit` runs its register last in, first out: every handler the program
+    registers afterwards runs ahead of it, and the interpreter runs the
+    program's surviving threads out before any of them. It is registered
+    rather than called at the end, so it happens however the program ended —
+    returning, raising, or `SystemExit` — and on the verifier's path as well,
+    where `atexit._run_exitfuncs` reaches it before the findings are written.
+
+    A program that leaves NOTHING behind is finished when its main module
+    returns, and its state is put back there, in the `finally` — the same
+    instant as before. That is not a hedge, it is the same rule read at the
+    only moment it can be read: nothing of the program is left to see it.
+    What « nothing » means is asked of the interpreter — no thread of the
+    program's still running, nothing added to the exit register — and a
+    program that leaves either keeps its state until both are done with.
 
     `starting` is called after the name has been resolved and the import path
     arranged, and immediately before the interpreter is handed the program. It
@@ -242,10 +340,14 @@ def _hand_off(program: Program, err: TextIO, starting: Starting | None = None) -
     The number is why the caches are named apart from the rest; the descriptor
     is why the moment is reported as well as the paths.
     """
-    restored_argv, restored_path = list(sys.argv), list(sys.path)
+    restore = _putting_back(list(sys.argv), list(sys.path))
+    # Before the program starts, so the register's last-in-first-out order puts
+    # this after everything the program adds to it.
+    atexit.register(restore)
+    registered, running = atexit._ncallbacks(), _the_threads_running_now()
     # Assigned as a slice, so a path with nothing on it is added to rather than
     # subscripted. Every import this launcher needs is already done.
-    sys.path[:1] = [program.first_on_the_path]
+    sys.path[:1] = _the_head_for(program)
     try:
         if program.module is not None:
             origins = _refuse_a_name_that_names_no_module(program.module, starting)
@@ -261,9 +363,70 @@ def _hand_off(program: Program, err: TextIO, starting: Starting | None = None) -
     except SystemExit as ending:
         return _ending(ending.code, err)
     finally:
-        sys.argv = restored_argv
-        sys.path[:] = restored_path
+        if not _the_program_outlives_its_main_module(registered, running):
+            atexit.unregister(restore)
+            restore()
     return 0
+
+
+def _putting_back(argv: list[str], path: list[str]) -> Callable[[], None]:
+    """The launcher's own arguments and import path, restored once and once only.
+
+    Once, because it can be reached twice: the verifier's harness runs the exit
+    register itself and the interpreter runs what is left of it afterwards, and
+    two hand-offs in one process leave two of these in the register. Each one
+    puts back what IT saw, and the innermost runs first, so a process ends with
+    the state it started with however many programs it ran.
+
+    `sys.argv` is rebound and `sys.path` is assigned into, exactly as they were
+    taken: something else may be holding the list object the path came in.
+    """
+    put_back = False
+
+    def restore() -> None:
+        nonlocal put_back
+        if put_back:
+            return
+        put_back = True
+        sys.argv = list(argv)
+        sys.path[:] = list(path)
+
+    return restore
+
+
+def _the_threads_running_now() -> frozenset[int]:
+    """Every thread alive at this instant, by the identity `threading` gives it."""
+    return frozenset(thread.ident for thread in threading.enumerate() if thread.ident is not None)
+
+
+def _the_program_outlives_its_main_module(registered: int, running: frozenset[int]) -> bool:
+    """Whether anything of the program is still to come, asked of the interpreter.
+
+    Two things outlive a main module and both are the program's own code: a
+    handler it registered to run at exit, and a thread it started that the
+    interpreter will wait for. Neither is asked about by name — the exit
+    register cannot be read and a thread does not say who started it — so each
+    is read as a CHANGE since the hand-off began: the register grew, or a
+    non-daemon thread is running that was not running before.
+
+    A daemon thread is not one of them. The interpreter does not wait for one
+    either; it ends it at shutdown, so holding the program's state for one
+    would be holding it for something that may never finish.
+
+    It errs towards saying no, and that is the direction to err in here: a no
+    puts the launcher's state back at the instant this function is asked, which
+    is where it was always put back before any of this existed.
+    """
+    if atexit._ncallbacks() > registered:
+        return True
+    current = threading.current_thread()
+    return any(
+        thread is not current
+        and not thread.daemon
+        and thread.is_alive()
+        and thread.ident not in running
+        for thread in threading.enumerate()
+    )
 
 
 def _starting(

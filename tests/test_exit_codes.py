@@ -54,7 +54,7 @@ def test_no_outcome_takes_the_code_the_parser_uses() -> None:
 def test_the_codes_the_contract_already_published_are_not_renumbered() -> None:
     """Article 13: one contract, one rendering.
 
-    `sayfirst whoami` — implemented in the contract distribution — already
+    `sayfirstd whoami` — implemented in the contract distribution — already
     publishes these three codes for these three situations. A second client of
     the same contract that numbered them differently would make one event read
     two ways depending on which subcommand produced it.

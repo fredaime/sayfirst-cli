@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from sayfirst_cli import exit_codes, main, packs_cmd
-from sayfirst_cli.instrument import manifest
+from sayfirst_cli.instrument import designation, manifest
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 SUBPROCESS_PACK = REPOSITORY / "src" / "sayfirst_cli" / "packs" / "subprocess"
@@ -67,7 +67,9 @@ def packs_root(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     the distribution itself, and every guard that walks the shipped packs would
     then read it as shipped.
     """
-    monkeypatch.setattr(packs_cmd.importlib.resources, "files", lambda package: root)
+    # The walk lives beside the rule that reads a designation, since both read the
+    # one shipped set; `packs_cmd.shipped_packs` is that function under its old name.
+    monkeypatch.setattr(designation.importlib.resources, "files", lambda package: root)
 
 
 def test_main_dispatches_packs_to_the_packs_command() -> None:
@@ -150,6 +152,29 @@ def test_check_names_the_member_and_the_rule_for_an_invalid_pack(tmp_path: Path)
     assert out == ""
     assert "pack.toml" in err
     assert str(empty) in err
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [
+        'uninterposed_events = "example_module.other"\n',
+        'uninterposed_events = ["example_module.effect"]\n',
+        'uninterposed_events = ["example_module.other"]\ninner_events = ["elsewhere.event"]\n',
+    ],
+)
+def test_check_refuses_what_the_verifier_would_refuse(tmp_path: Path, declared: str) -> None:
+    """`check` answers for the pack a later `verify` reads, not only for the engine's part.
+
+    The verifier also reads what the pack says it does NOT interpose, and which
+    of those its own call raises; a declaration it cannot act on is refused
+    there with 64. `check` said « ok » for the same pack, so the one command
+    that exists to say whether a pack will work said it would.
+    """
+    pack = plant(tmp_path, "declaring", GOOD_MANIFEST + declared)
+    code, out, err = run("packs", "check", str(pack))
+    assert code == exit_codes.EXIT_MISUSE, (out, err)
+    assert out == ""
+    assert "[[point]] 1" in err
 
 
 def test_check_of_a_directory_that_does_not_exist_is_the_same_misuse(tmp_path: Path) -> None:

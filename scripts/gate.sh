@@ -12,19 +12,21 @@
 #                                     install, and proving on every run that it
 #                                     can fail
 #
-# `sayfirst-contract` is published on no index — article 0 forbids publishing
-# anything until the marks are filed — so this gate is told where a checkout of
-# the control plane repository is, and it builds the contract from a named ref
-# of it rather than from whatever that clone has checked out.
+# The contract this client pins is built from source, never taken from an index:
+# the version a change pins may not be on one yet (it is published with the
+# release that pins it), and a gate that read the index would prove this client
+# against whatever the index held. So this gate is told where a checkout of the
+# control plane repository is, and it builds the contract from a named ref of
+# it rather than from whatever that clone has checked out.
 #
 #   SAYFIRST_CONTRACT_SOURCE   default ../sf-control-plane-lt
 #   SAYFIRST_CONTRACT_REF      default origin/main
 #   SAYFIRST_PYTHON            default 3.13
 #
-# The contract is on no index and cannot be vendored here either (article 14 and
-# `docs/PROVENANCE.md`), so on some machines — a fork with no network, a runner
-# behind a proxy, anyone offline — it is simply not there. This gate does
-# not treat that as a crash, and does not treat it as a pass. It has three
+# The contract is built from that checkout and cannot be vendored here either
+# (article 14 and `docs/PROVENANCE.md`), so on some machines — a fork with no
+# network, a runner behind a proxy, anyone offline — it is simply not there.
+# This gate does not treat that as a crash, and does not treat it as a pass. It has three
 # outcomes rather than two, which is article 2's rule about status surfaces
 # applied to the gate's own status:
 #
@@ -96,7 +98,7 @@ else
   # is measured below rather than assumed.
   venv="$repository/.venv-reduced"
   echo "gate: no checkout of the control plane repository at $contract_source"
-  echo "gate: the contract is on no index (article 0) and is not vendored here"
+  echo "gate: the contract is built from that source and is not vendored here"
   echo "gate: (article 14), so this run is reduced. Set SAYFIRST_CONTRACT_SOURCE"
   echo "gate: to a checkout of that repository for the full gate."
 fi

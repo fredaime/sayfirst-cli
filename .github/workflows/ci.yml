@@ -41,9 +41,11 @@
 # state", so `scripts/gate.sh` has three outcomes and this workflow renders
 # three and not two:
 #
-#   gate (full)                     the contract was built from the control
+#   gate (full, python X.Y)         the contract was built from the control
 #                                   plane's public repository, at the tag this
-#                                   client pins, and every check ran.
+#                                   client pins, and every check ran — once per
+#                                   interpreter `requires-python` admits, since
+#                                   a release installs on any of them.
 #                                   `scripts/gate.sh` exits 0.
 #   gate (reduced — contract        no checkout of the control plane was made,
 #   absent, some checks not run)    so the contract is absent. Format, lint and
@@ -191,10 +193,18 @@ jobs:
           fi
 
   full:
-    name: gate (full)
+    name: gate (full, python ${{ matrix.python }})
     needs: reachability
     if: needs.reachability.outputs.contract == 'reachable'
     runs-on: ubuntu-latest
+    # Every interpreter `requires-python` admits. Python 3.14 changed what
+    # `Path.exists` answers and gave `json` a `__main__`, and a gate that ran one
+    # interpreter found neither: a range this client installs on is a range
+    # this gate runs.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -219,12 +229,13 @@ jobs:
         env:
           SAYFIRST_CONTRACT_SOURCE: ${{ github.workspace }}/sayfirst-control-plane
           SAYFIRST_CONTRACT_REF: ${{ needs.reachability.outputs.tag }}
+          SAYFIRST_PYTHON: ${{ matrix.python }}
         run: |
           status=0
           ./scripts/gate.sh || status=$?
           case "$status" in
             0)
-              echo "### gate: full green" >> "$GITHUB_STEP_SUMMARY"
+              echo "### gate: full green (python ${{ matrix.python }})" >> "$GITHUB_STEP_SUMMARY"
               echo "" >> "$GITHUB_STEP_SUMMARY"
               echo "Format, lint, every test and the dependency-closure guard of articles 13" >> "$GITHUB_STEP_SUMMARY"
               echo "and 14 ran against a contract built from the control plane's public" >> "$GITHUB_STEP_SUMMARY"

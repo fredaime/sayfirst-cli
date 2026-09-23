@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 
 import pytest
 from canned_daemon import answering_by_path
@@ -40,9 +41,9 @@ def replay(monkeypatch):
     def arrange(*responses):
         http = Replies(responses)
 
-        def connect(profile):
+        def connect(profile, **_):
             assert profile.scope == "team-ops"
-            assert profile.socket_path == "daemon.sock"
+            assert profile.socket_path == os.path.abspath("daemon.sock")
             return verified(profile, http)
 
         monkeypatch.setattr(reads, "connect", connect)
@@ -95,6 +96,35 @@ def test_show_renders_an_already_approved_wait(replay):
     assert "state: approved\n" in stdout
     assert "resolved_at: 2026-09-16T00:00:30+00:00\n" in stdout
     assert "reason: looked fine\n" in stdout
+
+
+def test_show_names_the_person_who_acted(replay):
+    """Article 12: the record names the person. The prose form rendered six of the
+    record's members and never that one, so a person reading `show` could not see
+    who had approved what they were looking at."""
+    replay(
+        (
+            200,
+            approval_record(
+                state="approved",
+                resolved_at="2026-09-16T00:00:30+00:00",
+                resolution_reason="looked fine",
+                person="alice",
+            ),
+        )
+    )
+    code, stdout, stderr = run("show", *arguments())
+    assert code == 0, stderr
+    assert "person: alice\n" in stdout
+
+
+def test_a_wait_nobody_acted_on_names_no_person(replay):
+    """Absent rather than « not stated »: a wait nobody acted on has no person, and
+    the contract renders the member only where there is one."""
+    replay((200, approval_record(state="pending")))
+    code, stdout, _ = run("show", *arguments())
+    assert code == 0
+    assert "person:" not in stdout
 
 
 def test_show_json_preserves_the_whole_record(replay):

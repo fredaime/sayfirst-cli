@@ -74,11 +74,21 @@ def answering(socket_path: Path, status: int, document: Mapping[str, object]) ->
 @contextmanager
 def answering_by_path(
     socket_path: Path,
-    routes: dict[str, tuple[int, Mapping[str, object] | Sequence[Mapping[str, object]]]],
+    routes: dict[
+        str,
+        tuple[
+            int,
+            Mapping[str, object]
+            | Sequence[Mapping[str, object] | tuple[int, Mapping[str, object]]],
+        ],
+    ],
     *,
     close_after_each: bool = False,
 ) -> Iterator[Path]:
     """Match the longest path prefix; advance document sequences, repeating the last.
+
+    An item of a sequence may be `(status, document)`, answered with that status
+    instead of the route's.
 
     With `close_after_each`, every answer carries `Connection: close` and the
     server hangs up after it — what the real daemon does after an answer an
@@ -109,6 +119,10 @@ def answering_by_path(
                     else:
                         document = documents[min(positions[prefix], len(documents) - 1)]
                         positions[prefix] += 1
+                        if isinstance(document, tuple):
+                            # One answer of the sequence with a status of its own:
+                            # a read answered, and the next one refused.
+                            status, document = document
                     break
             body = json.dumps(document).encode()
             self.send_response(status)

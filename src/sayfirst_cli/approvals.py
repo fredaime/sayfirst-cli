@@ -7,14 +7,13 @@ module reads the same way `trace` and `explain` do — through `reads.read` and
 answer the same document a `show` would: the record the act left behind, so a
 caller renders one writer whichever of the three it asked for.
 
-Unlike `read_decision`, the daemon does NOT close the connection after
-`read_approval` or `resolve_approval` (the transport's own docstrings say so):
-it writes both answers through its own handler and leaves the connection for
-the next request. That is what lets a person read a wait and then end it
-without reconnecting — and it is the daemon's behaviour to rely on, not a
-promise the daemon owes across every future release. One command here ever
-does one thing, so nothing in this module reads twice on the same connection
-and rule C4's explicit reconnect never comes up.
+The daemon leaves the connection open after `read_approval` and
+`resolve_approval`, as it does after every document it answers; only a stream
+ends its connection. That is what lets a person read a wait and then end it
+without reconnecting — and it is the daemon's behaviour, not a promise the
+daemon owes across every future release. One command here ever does one
+thing, so nothing in this module reads twice on the same connection and rule
+C4's explicit reconnect never comes up.
 """
 
 from __future__ import annotations
@@ -40,7 +39,12 @@ def _stated(value: object) -> str:
 
 
 def _write_approval(document: Mapping[str, object], stream: TextIO) -> None:
-    """The seven members a person reads about one wait — read or resolved alike."""
+    """The members a person reads about one wait — read or resolved alike.
+
+    `person` only where the record has one: the contract renders it only then
+    (article 12 names the person; a wait nobody acted on has none), so its
+    absence is not « not stated » but no line at all.
+    """
     stream.write(f"approval: {document['approval_ref']}\n")
     stream.write(f"decision: {document['decision_ref']}\n")
     stream.write(f"state: {document['state']}\n")
@@ -48,6 +52,9 @@ def _write_approval(document: Mapping[str, object], stream: TextIO) -> None:
     stream.write(f"deadline: {document['deadline']}\n")
     stream.write(f"resolved_at: {_stated(document.get('resolved_at'))}\n")
     stream.write(f"reason: {_stated(document.get('resolution_reason'))}\n")
+    person = document.get("person")
+    if isinstance(person, str):
+        stream.write(f"person: {person}\n")
 
 
 def _connection_parser(prog: str) -> argparse.ArgumentParser:

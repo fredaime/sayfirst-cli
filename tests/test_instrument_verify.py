@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 from canned_daemon import answering_by_path
-from documents import foreign_generation_page, no_evidence_page, recorded_effect_page
+from documents import foreign_generation_page, no_evidence_page, problem, recorded_effect_page
 from governed_programs import (
     FIRST_ARGUMENT_INTERPOSE,
     SPAWNING_APP,
@@ -333,6 +333,10 @@ def test_the_json_form_carries_the_report_and_what_was_verified(tmp_path: Path) 
             "audit_event": "subprocess.Popen",
             "capability": SPAWN,
             "events": 1,
+            # Empty, and present: the count says how much this run could not
+            # judge and this says why, so a run with nothing outstanding
+            # publishes an empty list rather than leaving a reader to infer one.
+            "incomplete": [],
             "module": "subprocess",
             "pack": "process-effects",
             "unjudged": 0,
@@ -1608,14 +1612,20 @@ def a_sourceless_module(root: Path, marker: Path) -> Path:
 def test_a_gate_that_never_opened_says_so_and_reports_no_verdict(
     tmp_path: Path, as_json: bool
 ) -> None:
-    """Exit 4 with the sentence, never `not-exercised`: nothing was watched.
+    """Exit 7 with the sentence, never `not-exercised`: nothing was watched.
 
     Measured as the defect: this run printed
-    `not-exercised … events=0` and exited 7 — byte for byte what a program that
-    never walked the path produces — while the spawn happened. « This run
-    established an absence » and « this run never began watching » are
-    different facts, and the rest of this harness is fastidious about exactly
-    that distinction.
+    `not-exercised … events=0` — byte for byte what a program that never walked
+    the path produces — while the spawn happened. « This run established an
+    absence » and « this run never began watching » are different facts, and
+    the rest of this harness is fastidious about exactly that distinction: the
+    sentence and the problem code say which one happened, and no verdict line is
+    printed at all.
+
+    The status is 7, the local check that could not conclude — the plane was
+    asked, its chain was read, and what could not be done was the watching. It
+    was 4 for a while, which a shell reads as « the control plane could not be
+    asked » about a control plane that had answered.
 
     The spawn happening is asserted, not excused: it is why the run must report
     no verdict at all.
@@ -1638,10 +1648,9 @@ def test_a_gate_that_never_opened_says_so_and_reports_no_verdict(
             "solo",
             cwd=tree,
         )
-    assert code == exit_codes.EXIT_COULD_NOT_ASK, (stdout, stderr)
-    assert code != exit_codes.EXIT_COULD_NOT_CHECK
-    assert code != 0
-    assert "not-exercised" not in stderr
+    assert code == exit_codes.EXIT_COULD_NOT_CHECK, (stdout, stderr)
+    assert code != exit_codes.EXIT_COULD_NOT_ASK
+    assert "not-exercised" not in stdout + stderr
     # The harness says it on its own stream whichever rendering was asked for.
     assert "never saw the program's own code start" in stderr
     assert marker.exists(), "the program did not run, so this proves nothing about the gate"
@@ -2088,3 +2097,278 @@ def test_findings_that_exist_and_will_not_read_answer_the_code_for_a_check(
     assert envelope["problem"]["message"] == verify_command.UNREADABLE_FINDINGS
     # And no path inside a directory this command has already removed.
     assert "sayfirst-verify-" not in envelope["problem"]["message"]
+
+
+# --- a read the control plane refused is refused, not « could not ask » --------
+
+
+def test_a_chain_read_the_plane_refused_answers_refused(tmp_path: Path) -> None:
+    """3 and not 4: the plane was asked, and it said no.
+
+    Every other command of this client answers a refused read with 3. `verify`
+    answered 4 for it — « the control plane could not be asked » — about a
+    control plane that had been asked and had answered.
+    """
+    code, envelope = _answered(
+        _said(
+            tmp_path,
+            outcome=harness.CHAIN_UNREADABLE_BEFORE,
+            detail="the scope is not one the daemon reads",
+            problem_code="scope_invalid",
+            problem_class="refused",
+        )
+    )
+    assert code == exit_codes.EXIT_REFUSED
+    assert envelope["problem"]["code"] == "scope_invalid"
+
+
+def test_the_class_the_harness_carried_decides_and_not_the_registry(tmp_path: Path) -> None:
+    """A problem this client minted is « could not ask », whatever class its code has.
+
+    The transport mints `generation_unsupported`, which the registry classes as
+    refused, for an answer in a generation this client does not read: nobody
+    refused anything. The class travels in the outcome file for that reason.
+    """
+    code, envelope = _answered(
+        _said(
+            tmp_path,
+            outcome=harness.CHAIN_UNREADABLE_DURING,
+            detail="an answer in another generation",
+            problem_code="generation_unsupported",
+            problem_class="could_not_ask",
+        )
+    )
+    assert code == exit_codes.EXIT_COULD_NOT_ASK
+    assert envelope["problem"]["code"] == "generation_unsupported"
+
+
+@pytest.mark.parametrize("carried", [None, "declined", 3])
+def test_a_class_this_command_cannot_read_is_not_read_as_refused(
+    tmp_path: Path, carried: object
+) -> None:
+    """An absent or unknown class is the fallback, never the more precise answer."""
+    members: dict[str, object] = {
+        "outcome": harness.CHAIN_UNREADABLE_BEFORE,
+        "detail": "",
+        "problem_code": "scope_invalid",
+    }
+    if carried is not None:
+        members["problem_class"] = carried
+    code, _ = _answered(_said(tmp_path, **members))
+    assert code == exit_codes.EXIT_COULD_NOT_ASK
+
+
+def test_a_refused_class_on_an_ending_that_carries_no_read_changes_nothing(
+    tmp_path: Path,
+) -> None:
+    """Only a chain read is classified; the harness's own endings keep their codes."""
+    code, _ = _answered(
+        _said(tmp_path, outcome=harness.REPORTED, detail="", problem_class="refused")
+    )
+    assert code == exit_codes.EXIT_COULD_NOT_CHECK
+
+
+def test_a_refused_class_with_a_code_the_registry_does_not_know_is_not_refused(
+    tmp_path: Path,
+) -> None:
+    """The fallback code is a « could not ask » code, and the status goes with it."""
+    code, envelope = _answered(
+        _said(
+            tmp_path,
+            outcome=harness.CHAIN_UNREADABLE_BEFORE,
+            detail="",
+            problem_code="chain_went_sideways",
+            problem_class="refused",
+        )
+    )
+    assert code == exit_codes.EXIT_COULD_NOT_ASK
+    assert envelope["problem"]["code"] == verify_command.UNCLASSIFIED.value
+
+
+@pytest.mark.parametrize(
+    ("answered", "expected"),
+    [(True, "refused"), (False, "could_not_ask")],
+)
+def test_the_harness_writes_the_class_of_the_problem_it_carries(
+    tmp_path: Path, answered: bool, expected: str
+) -> None:
+    """Asked of the value: the same code is refused when the plane sent it and
+    « could not ask » when this client minted it for an answer it could not read."""
+    from sayfirst_contract.problems import Problem, ProblemCode
+
+    outcome = tmp_path / "outcome.json"
+    problem = Problem(
+        ProblemCode.GENERATION_UNSUPPORTED,
+        "another generation",
+        False,
+        1,
+        control_plane_answered=answered,
+    )
+    harness._write_outcome(outcome, harness.CHAIN_UNREADABLE_BEFORE, "d", problem=problem)
+    written = json.loads(outcome.read_text(encoding="utf-8"))
+    assert written["problem_code"] == "generation_unsupported"
+    assert written["problem_class"] == expected
+
+
+def _verify_against(tmp_path: Path, pages: object) -> tuple[int, str, str]:
+    pack = plant_spawn_pack(tmp_path)
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "app.py").write_text(SPAWNING_APP, encoding="utf-8")
+    with answering_by_path(tmp_path / "d.sock", {"/scopes/": (200, pages)}) as address:
+        return verify(
+            "--pack",
+            str(pack),
+            "--socket",
+            str(address),
+            "--scope",
+            "local",
+            "--ungoverned",
+            "--json",
+            "--",
+            "app.py",
+            cwd=tree,
+        )
+
+
+def test_verify_answers_refused_when_the_plane_refuses_the_first_read(tmp_path: Path) -> None:
+    code, stdout, stderr = _verify_against(tmp_path, [(403, problem("scope_refused"))])
+    assert code == exit_codes.EXIT_REFUSED, (stdout, stderr)
+    assert json.loads(stdout)["problem"]["code"] == "scope_refused"
+
+
+def test_verify_answers_refused_when_the_plane_refuses_a_read_while_the_program_runs(
+    tmp_path: Path,
+) -> None:
+    code, stdout, stderr = _verify_against(
+        tmp_path, [no_evidence_page(), (403, problem("principal_refused"))]
+    )
+    assert code == exit_codes.EXIT_REFUSED, (stdout, stderr)
+    assert json.loads(stdout)["problem"]["code"] == "principal_refused"
+    assert "while the program ran" in json.loads(stdout)["problem"]["message"]
+
+
+def test_verify_still_answers_could_not_ask_when_the_plane_cannot_answer(tmp_path: Path) -> None:
+    """The other class, through the same path: a store that is down is not a refusal."""
+    code, stdout, stderr = _verify_against(
+        tmp_path, [no_evidence_page(), (503, problem("evidence_store_unavailable"))]
+    )
+    assert code == exit_codes.EXIT_COULD_NOT_ASK, (stdout, stderr)
+    assert json.loads(stdout)["problem"]["code"] == "evidence_store_unavailable"
+
+
+# --- the program's diagnostics are not the report, and cannot discard it --------
+
+#: A program that prints a byte no locale decodes, on both of its streams, and
+#: then walks the governed path and ends normally. The byte is written to the
+#: descriptor rather than through `print`, because a text stream would refuse
+#: it here rather than in the parent — and the parent is where the defect was.
+A_PROGRAM_THAT_PRINTS_A_BYTE = """\
+import os
+import subprocess
+
+os.write(1, b"\\xff")
+os.write(2, b"\\xfe")
+subprocess.run(["true"], check=True)
+"""
+
+
+def test_a_byte_the_program_printed_never_discards_a_completed_verification(
+    tmp_path: Path,
+) -> None:
+    """A target's diagnostics are decoded leniently; its verdict still arrives.
+
+    Measured as the defect: the harness's two streams were captured with
+    strict locale decoding, so one byte of `0xff` from an arbitrary Python
+    program raised `UnicodeDecodeError` in the PARENT, before the report file
+    was read. A verification that had run to a conclusion — one spawn, one
+    recorded allow, `governed` written down — was thrown away by output that
+    said nothing about governance at all.
+
+    The report does not travel on either of these streams: the harness writes
+    it to a file of its own (`harness._write_report`) and this command reads
+    that file, strictly, in `_findings`. So leniency here reaches diagnostics
+    only, and the test below holds the report's own channel to the opposite
+    rule.
+    """
+    pack = plant_spawn_pack(tmp_path)
+    tree = a_quiet_tree(tmp_path, body=A_PROGRAM_THAT_PRINTS_A_BYTE)
+    routes = {"/scopes/": (200, [no_evidence_page(), recorded_effect_page(SPAWN)])}
+    with answering_by_path(tmp_path / "d.sock", routes) as address:
+        code, stdout, stderr = verify(
+            "--pack",
+            str(pack),
+            "--socket",
+            str(address),
+            "--scope",
+            "local",
+            "--ungoverned",
+            "--",
+            "app.py",
+            cwd=tree,
+        )
+    assert code == 0, (stdout, stderr)
+    assert f"governed process-effects subprocess.Popen {SPAWN} events=1" in stdout
+    assert "target exit: 0" in stdout
+    assert "UnicodeDecodeError" not in stderr
+    # The bytes were not dropped either: both streams reached the diagnostic
+    # stream, each byte standing as the replacement character.
+    assert stderr.count("�") >= 2, stderr
+
+
+def test_a_report_this_client_cannot_decode_is_an_inability_and_never_a_verdict(
+    tmp_path: Path,
+) -> None:
+    """The report's own channel stays strict: a mangled report is no verdict.
+
+    The twin of the test above, and the reason the leniency there is confined
+    to `_harness`. Replacement-decoding the findings would turn bytes nobody
+    wrote as a report into a document that might parse — a quietly wrong
+    verdict, which is worse than the crash being removed. `_findings` answers
+    « there are no findings », which `run` reports as a verification that
+    concluded nothing.
+    """
+    report = tmp_path / verify_command.REPORT_FILE
+    report.write_bytes(b'{"points": [{"verdict": "governed\xff"}]}\n')
+    assert verify_command._findings(report) is None
+
+
+def test_a_run_matches_records_by_its_correlation_not_by_a_connection() -> None:
+    """The fix for a multi-effect governed run: records span connections, one token.
+
+    The shipped boundary holds one connection per grant, so a run that asks about
+    two kinds of effect writes two records on two connections. Both are this
+    run's, and the token this run stamped is what says so — the first record as
+    much as the second.
+    """
+    chain = harness.Chain(
+        connection=None,  # type: ignore[arg-type]
+        scope="local",
+        floor=0,
+        one_execution=True,
+        correlation="sayfirst-verify:the-run",
+    )
+    mine_first = {"correlation": "sayfirst-verify:the-run", "connection_id": "c-1"}
+    mine_second = {"correlation": "sayfirst-verify:the-run", "connection_id": "c-2"}
+    another = {"correlation": "sayfirst-verify:another-run", "connection_id": "c-3"}
+    absent = {"connection_id": "c-4"}
+    # Both of this run's records match, though they name different connections;
+    # the first is held to the token, not trusted for naming it.
+    assert harness._this_runs_correlation(chain, mine_first) is True
+    assert harness._this_runs_correlation(chain, mine_second) is True
+    # Another execution's token, and a record carrying none, are not this run's.
+    assert harness._this_runs_correlation(chain, another) is False
+    assert harness._this_runs_correlation(chain, absent) is False
+
+
+def test_an_ungoverned_run_requires_no_correlation() -> None:
+    """`--ungoverned` stamped nothing, so the chain alone answers and every record
+    is another execution's by construction."""
+    chain = harness.Chain(
+        connection=None,  # type: ignore[arg-type]
+        scope="local",
+        floor=0,
+        one_execution=False,
+        correlation=None,
+    )
+    assert harness._this_runs_correlation(chain, {"correlation": None}) is True

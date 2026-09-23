@@ -34,60 +34,78 @@ flowchart LR
     V[anyone, offline<br/>sayfirst evidence exports] -. "verify the chain" .-> D
 ```
 
-## Install
-
-`sayfirst-cli` 0.2.0 is on the Python index. As a tool, in an environment of
-its own:
+## Three commands
 
 ```console
-$ uv tool install sayfirst-cli==0.2.0
- + sayfirst-boundary==0.2.0
- + sayfirst-cli==0.2.0
- + sayfirst-contract==0.2.0
-Installed 1 executable: sayfirst
+$ uv tool install sayfirst-cli --with-executables-from sayfirst-control-plane --with-executables-from sayfirstd
+$ sayfirst-daemon up --quickstart
+$ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
 ```
 
-Three distributions arrive and no more: the command, the contract it speaks, and
-the boundary in which a governed program holds its grant. Never a web framework,
-never a database layer — article 14's direction of dependency, measured on a
-real install by `scripts/check_dependency_closure.py` rather than promised here.
-`sayfirst-contract-stub` (a scriptable fake) and `sayfirst-conformance` are on
-the index at 0.2.0 as well.
-
-The daemon that answers is `sayfirst-control-plane`, and it is **publishing** —
-not on the index as this is written. Build it from a checkout of
-[the control plane's repository](https://github.com/fredaime/sayfirst-control-plane),
-the way [`QUICKSTART.md`](QUICKSTART.md) does:
+The first installs the client (`sayfirst`), the daemon (`sayfirst-daemon`) and
+the daemon's operator surface (`sayfirstd`) into one tool environment — `uv tool
+install` takes one package, so the other two ride on `--with-executables-from`.
+The second writes a readable starter policy and a per-user configuration under
+`~/.sayfirst/quickstart/` **if they are not there**, starts the real daemon in
+the background, and says « ready » only once that daemon has answered. The third
+runs a program you already have, under the `python` you named, with every
+process it starts asked about first:
 
 ```console
-$ (cd /path/to/sayfirst-control-plane && uv build --all-packages --out-dir ~/quickstart/wheels)
-$ uv pip install --python .venv/bin/python --find-links wheels sayfirst-cli==0.2.0 sayfirst-control-plane==0.2.0
+$ sayfirst-daemon up --quickstart
+SayFirst Control Plane ready
+mode: per_user
+socket: /run/user/1000/sayfirst/daemon.sock
+policy: ~/.sayfirst/quickstart/policy.toml
+evidence: ~/.sayfirst/quickstart/evidence
+integrity grade: observability (the caller can write the store; the chain detects accidental corruption only)
+…
+$ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
+hello
 ```
 
-## Try it in five minutes
+Nothing in those lines is told where anything is. A per-user daemon given no
+address serves at `$XDG_RUNTIME_DIR/sayfirst/daemon.sock` (`~/.sayfirst/run/`
+where there is no runtime directory), and a client given no `--socket` looks at
+that one name — it searches for nothing, and it still verifies that whoever
+answers is your own account's process before it sends a byte. `--pack
+subprocess` is an **instrumentation pack**, not a policy: it says which calls
+are asked about, and the daemon's policy says what the answer is.
 
-Linux or macOS, Python 3.12, 3.13 or 3.14, and
-[`QUICKSTART.md`](QUICKSTART.md), which walks one governed decision end to end:
-a policy of two rules, an allow, a suspension, a person's answer, then the chain
-read back and exported. Every command on that page was run, in that order, before
-it was written down; its answers are pasted from that run. Two of them:
+**The policy is a file you edit**: `~/.sayfirst/quickstart/policy.toml`.
+Change `outcome = "allow"` to `"deny"` in its `process.spawn` rule and the same
+run stops before the process starts (status `1`); make it `"suspend"` and the
+run stops there too (status `5`) while the request waits for a person —
+`sayfirst approvals approve` ends the wait, and the next run of the same program
+goes through, once. The daemon reads the file when it decides, so nothing is
+restarted — and running `up --quickstart` again never writes over it.
 
 ```console
-$ .venv/bin/sayfirst ask --capability example.read --scope local --socket $S
-verified: true (server_uid 1000, expected 1000)
-outcome: allow
-reason: policy_allows
-$ .venv/bin/sayfirst evidence export --scope local --socket $S --from 1 --out bundle.json
-local_check: unverifiable
-manifest: recomputes
-chain: intact
-coverage: unknown
-issue: coverage_unknown
+$ sayfirstd status            # what the daemon says about itself
+$ sayfirst instrument verify --pack subprocess --scope local -- python my_agent.py
+$ sayfirst-daemon down        # stops the daemon `up` started, and only that one
 ```
 
-The `verified:` line is the daemon proving who it is. The second command is the
-honesty: that bundle's chain is intact and its manifest recomputes, and it still
-answers `unknown`, because its epoch is open.
+[`QUICKSTART.md`](QUICKSTART.md) walks all of it — allow, deny, a suspension and
+a person's answer, the proof, the chain read back and exported — and every
+command on that page was run, in that order, before it was written down.
+
+### What the index holds today
+
+`sayfirst-cli` 0.2.0 is on the Python index, with `sayfirst-contract`,
+`sayfirst-boundary`, `sayfirst-contract-stub` and `sayfirst-conformance`. That
+release **predates the three commands above**: it requires `--socket`, reads
+`--pack` as a directory only, and refuses `python` as the first word of a
+target. `sayfirst-control-plane` and `sayfirstd` are **not on the index** as
+this is written. Until a release carries this page, build the distributions from
+checkouts of the two repositories and install those — the quickstart's first
+section gives the three lines, and they are what its walk used.
+
+Installed on its own, the client brings three distributions and no more: the
+command, the contract it speaks, and the boundary in which a governed program
+holds its grant. Never a web framework, never a database layer — article 14's
+direction of dependency, measured on a real install by
+`scripts/check_dependency_closure.py` rather than promised here.
 
 ## What you get — three directions
 
@@ -101,14 +119,17 @@ verified, and one answer rendered as it was given: allow, deny or suspend, and
 "could not ask" when the daemon could not be reached. That is `sayfirst ask`.
 
 **It puts the boundary in front of somebody else's program.** `sayfirst
-instrument run --pack DIR … -- <program>` runs a program with the named effects
-asked about first, reversibly and writing nothing anywhere; `instrument verify`
+instrument run --pack PACK … -- <program>` runs a program with the named effects
+asked about first, reversibly and writing nothing anywhere; a program spelled
+`python app.py` is handed, whole command and all, to the interpreter that was
+named, so it keeps its own environment's dependencies; `instrument verify`
 runs it again under the interpreter's own audit hook and proves, from that and
 the scope's evidence chain alone, that every effect of a named kind was preceded
 by a decision; `instrument apply` is reserved for the committed code
 modification and refuses, saying so. `sayfirst packs list` prints the packs this
-distribution ships — `database`, `http-client`, `subprocess` — with the path
-`--pack` accepts ([`docs/PACKS.md`](docs/PACKS.md)). A program whose effects are
+distribution ships — `database`, `http-client`, `subprocess` — each of which
+`--pack` takes by that name, while a pack of your own is a directory spelled
+with a separator, `--pack ./own-pack` ([`docs/PACKS.md`](docs/PACKS.md)). A program whose effects are
 not library calls composes the boundary by hand from `sayfirst-boundary`.
 
 **Afterwards, it reads and verifies.** `sayfirst trace` reads back one decision
@@ -132,13 +153,17 @@ acted, when and why. `approve` and `reject` end it exactly once, with an optiona
 plane could not be asked — because article 1 requires that "denied" and "could
 not ask" never read as each other. A caller branching on a single non-zero exit
 would read an unreachable daemon as a refusal; the codes exist so that it
-cannot. `trace`, `explain` and `evidence history` exit `0` on a read, whatever
-the record said. The checks — `evidence audit`, `export`, `exports` and
-`instrument verify` — carry the local check's own result instead: `0` when it
-holds, `6` for a finding the plane did not state, `7` when it could not
-conclude, the ordinary answer for a bundle from an open epoch (so `sayfirst
-evidence export && …` is not how to script one). A misused invocation is `64`;
-a usage error is `2` everywhere.
+cannot. `instrument run` ends with the program's own status — except when the
+program does not handle an outcome the boundary raised in it, and then it ends
+with that outcome's code (`1`, `5`, `3` or `4`) rather than the interpreter's
+`1`, which would read every one of them as a denial. `trace`, `explain` and
+`evidence history` exit `0` on a read, whatever the record said. The checks —
+`evidence audit`, `export`, `exports` and `instrument verify` — carry the local
+check's own result instead: `0` when it holds, `6` for a finding the plane did
+not state, `7` when it could not conclude, the ordinary answer for a bundle from
+an open epoch (so `sayfirst evidence export && …` is not how to script one);
+like every read, they answer `3` or `4` when the plane refused them or could not
+be asked. A misused invocation is `64`; a usage error is `2` everywhere.
 
 ## What it is not (yet)
 
@@ -173,10 +198,10 @@ instrumentation engine with its three packs, and the offline verifier that reads
 the contract's canonicalization, recipe and vectors — no line of server code.
 
 **Where the line falls.** The control plane's repository keeps the operator
-surface that inspects its own daemon — `status`, `doctor`, `policy
-show|history`, `plugins list`, with `systems {register,retire}` pending its own
-question. `trace`, `explain` and `evidence {audit,history,exports,export}` are
-this client's: they read the decisions and evidence the plane supplied.
+surface that inspects its own daemon, `sayfirstd` — today `status`, `whoami`,
+`plugins list` and `conformance replay`. `trace`, `explain` and
+`evidence {audit,history,exports,export}` are this client's: they read the
+decisions and evidence the plane supplied.
 [`docs/PARTITION.md`](docs/PARTITION.md) says it command by command, and names
 the questions it does not close.
 
@@ -201,7 +226,7 @@ contract is built from a checkout of the control plane's repository, at the tag
 this client pins:
 
 ```console
-$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.2.0 ./scripts/gate.sh
+$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.3.0 ./scripts/gate.sh
 ```
 
 The workflow does the same and carries no credential of any kind: a fork can

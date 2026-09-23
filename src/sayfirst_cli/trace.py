@@ -48,11 +48,12 @@ def main(
         record = result.value.to_document()
         from_sequence, read_pages, position = 1, 0, None
         for _ in range(arguments.pages):
-            # The daemon closes the connection after a decision read (an adapter
-            # wrote that answer), and an evidence read may close its own. The
-            # transport never re-opens an address on a caller's behalf (rule
-            # C4), so every page is read on a connection reopened — and the far
-            # end verified again — here, exactly as `history` walks its pages.
+            # A daemon may close the connection after any answer (the one this
+            # client was written against keeps it open after a document, which
+            # is a behaviour and not a promise), and the transport never
+            # re-opens an address on a caller's behalf (rule C4). So every page
+            # is read on a connection reopened — and the far end verified
+            # again — here, exactly as `history` walks its pages.
             connection.reconnect()
             page = connection.read_evidence(arguments.scope, from_sequence, 100)
             if not isinstance(page, Answered):
@@ -60,7 +61,10 @@ def main(
             read_pages += 1
             entries, verification, next_from = pages.members(page.value, from_sequence)
             for entry in entries:
-                if entry["kind"] == "effect" and entry["body"]["decision_id"] == arguments.decision:
+                if (
+                    entry["kind"] == pages.EFFECT
+                    and entry["body"]["decision_id"] == arguments.decision
+                ):
                     grade = next(
                         (
                             item["grade"]

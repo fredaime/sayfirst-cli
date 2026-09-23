@@ -8,7 +8,7 @@ of the question and an unanswerable question are three different facts, and a
 shell that collapses them into "non-zero" has lost the one distinction the
 constitution insists on.
 
-Three of these codes are not this repository's to choose. `sayfirst whoami`,
+Three of these codes are not this repository's to choose. `sayfirstd whoami`,
 which the contract distribution implements, already publishes `0`, `3`, `4` and
 `64` for the same four situations; a second client of the same contract that
 numbered them differently would make the same event read two ways depending on
@@ -36,12 +36,12 @@ EXIT_ALLOW: Final[int] = 0
 EXIT_DENY: Final[int] = 1
 
 #: The request was refused — the question was received and rejected.
-#: The value `sayfirst whoami` publishes for the same situation.
+#: The value `sayfirstd whoami` publishes for the same situation.
 EXIT_REFUSED: Final[int] = 3
 
 #: The control plane could not be asked, or answered something this generation
 #: cannot read. Never rendered as a denial (articles 1 and 2). The value
-#: `sayfirst whoami` publishes for the same situation.
+#: `sayfirstd whoami` publishes for the same situation.
 EXIT_COULD_NOT_ASK: Final[int] = 4
 
 #: The control plane answered `suspend`: the effect waits for a person.
@@ -60,7 +60,7 @@ EXIT_COULD_NOT_CHECK: Final[int] = 7
 
 #: The invocation was wrong, or something it named cannot be read — a profile
 #: that cannot say what it must verify, a pack manifest that does not parse, a
-#: pack this distribution ships that will not read. The value `sayfirst whoami`
+#: pack this distribution ships that will not read. The value `sayfirstd whoami`
 #: publishes for the same situation; `packs list` uses it for a broken shipped
 #: pack rather than minting a code for a case no caller can act on differently,
 #: because a distinct number would cost one in a table three commands share and

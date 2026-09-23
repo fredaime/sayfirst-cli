@@ -5,12 +5,20 @@ from __future__ import annotations
 
 import io
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 from canned_daemon import answering_by_path
-from documents import arguments, chain_page_nested, entry_lines, evidence_page, problem
-from sayfirst_contract.evidence import ChainCondition, verify_chain
+from documents import (
+    arguments,
+    chain_page_nested,
+    entry_lines,
+    evidence_page,
+    problem,
+    vector_entries,
+)
+from sayfirst_contract.evidence import ChainCondition, chained_document, verify_chain
 from sayfirst_contract.generation import CONTRACT_GENERATION
 
 from sayfirst_cli import exit_codes
@@ -59,8 +67,14 @@ def test_history_prints_every_entry_and_the_end(tmp_path: Path, entries):
 @pytest.mark.parametrize("as_json", [False, True])
 def test_audit_merges_every_served_verdict_and_checks_all_entries(tmp_path: Path, entries, as_json):
     """Asserted metadata is rendered from the pages, never re-derived by the CLI: gaps
-    in page order, a grade per connection with the later page's winning, and the count
-    of pages the verdict is made of. `daemon` was graded on page 1 only and survives."""
+    in page order, one grade per connection — the weakest any page gave it, so a later
+    page's `evidence` does not lift a range page 1 graded `observability` — and the count
+    of pages the verdict is made of. `daemon` was graded on page 1 only and survives.
+
+    This test used to expect the LATER page's grade to win, including a stronger one. That
+    was the merge's implementation restated as an expectation, and it contradicted the rule
+    it should have been holding the merge to: article 7 makes a verdict's grade the weakest
+    grade in effect over the period covered, and a merged verdict covers every page."""
     pages = [
         evidence_page(entries[:2], next_from=3),
         evidence_page(entries[2:], from_sequence=3, verified_entries=entries),
@@ -79,7 +93,7 @@ def test_audit_merges_every_served_verdict_and_checks_all_entries(tmp_path: Path
                 **pages[-1]["verification"],
                 "declared_gaps": [{"sequence": 2, "reason": "purged", "count": 4}],
                 "grades": [
-                    {"connection_id": "connection-1", "grade": "evidence"},
+                    {"connection_id": "connection-1", "grade": "observability"},
                     {"connection_id": "daemon", "grade": "unverified"},
                 ],
             },
@@ -92,10 +106,82 @@ def test_audit_merges_every_served_verdict_and_checks_all_entries(tmp_path: Path
             "pages: 2",
             "local_check: intact",
             "gap: sequence 2 reason purged count 4",
-            "grade: connection-1 evidence",
+            "grade: connection-1 observability",
             "grade: daemon unverified",
         ]
     assert "finding:" not in stdout
+
+
+def graded_chain(*records) -> list[dict[str, object]]:
+    """A real chain of grade records, each placed after its predecessor by the contract.
+
+    `chained_document` is the contract's own writer-side recipe, so what this
+    builds is a chain the contract's verifier accepts — not a shape invented
+    here to make an assertion come out.
+    """
+    template = next(entry for entry in vector_entries() if entry["kind"] == "grade")
+    chain: list[dict[str, object]] = []
+    for connection_id, grade in records:
+        record = deepcopy(template)
+        record["connection_id"] = connection_id
+        record["body"]["grade"] = grade
+        chain.append(chained_document(record, chain[-1] if chain else None))
+    return chain
+
+
+def page_verified_over_its_own_range(entries, *, from_sequence, next_from=None):
+    """One page whose served verdict covers that page's range, as the daemon serves it."""
+    page = evidence_page(entries, from_sequence=from_sequence, next_from=next_from)
+    page["verification"] = verify_chain(
+        entries, scope="local", from_sequence=from_sequence
+    ).to_document()
+    return page
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_audit_grades_each_connection_by_its_weakest_grade_over_the_whole_range(
+    tmp_path: Path, as_json
+):
+    """A verdict merged from several pages grades a connection the way the contract's own
+    verifier grades it over the same range: the weakest grade in effect over the period
+    covered, never the most recent one (CONSTITUTION.md article 7, « a verification verdict
+    carries, for every connection whose evidence it covers, the weakest grade in effect over
+    the period covered »). Both directions are asserted, because a merge that took the first
+    page's grade instead of the last would satisfy the upgrade case and lose the downgrade.
+    """
+    chain = graded_chain(
+        ("rises", "unverified"),  # page 1: the weakest grade of the range
+        ("falls", "evidence"),
+        ("rises", "observability"),  # page 2: stronger later — must not lift the range
+        ("falls", "unverified"),  # page 2: weaker later — must lower the range
+    )
+    pages = [
+        page_verified_over_its_own_range(chain[:2], from_sequence=1, next_from=3),
+        page_verified_over_its_own_range(chain[2:], from_sequence=3),
+    ]
+    contract = {
+        grade["connection_id"]: grade["grade"]
+        for grade in verify_chain(chain, scope="local", from_sequence=1).to_document()["grades"]
+    }
+    assert contract == {"falls": "unverified", "rises": "unverified"}
+    with answering_by_path(tmp_path / "d.sock", {"/scopes/": (200, pages)}) as address:
+        code, stdout, stderr = run("audit", *arguments(address, *(["--json"] if as_json else [])))
+    assert code == 0
+    assert stderr == ""
+    if as_json:
+        rendered = {
+            grade["connection_id"]: grade["grade"]
+            for grade in json.loads(stdout)["result"]["served"]["grades"]
+        }
+    else:
+        rendered = dict(
+            line.removeprefix("grade: ").split(" ")
+            for line in stdout.splitlines()
+            if line.startswith("grade: ")
+        )
+    assert rendered["rises"] == "unverified", "a later page's stronger grade lifted the range"
+    assert rendered["falls"] == "unverified", "a later page's weaker grade was dropped"
+    assert rendered == contract
 
 
 @pytest.mark.parametrize("as_json", [False, True])
@@ -289,14 +375,15 @@ def test_evidence_requires_an_implemented_subcommand(argv):
     "argv",
     [
         ["history", "--socket", "d.sock", "--from", "1"],
-        ["history", "--scope", "local", "--from", "1"],
         ["history", "--scope", "local", "--socket", "d.sock"],
         ["audit", "--socket", "d.sock", "--from", "1"],
-        ["audit", "--scope", "local", "--from", "1"],
         ["audit", "--scope", "local", "--socket", "d.sock"],
     ],
 )
-def test_online_reads_require_scope_socket_and_from(argv):
+def test_online_reads_require_scope_and_from(argv):
+    """The scope and the start of the range are never defaulted. The socket is no
+    longer in this list: a per-user profile given none is looked for at the
+    per-user default address, which `tests/test_default_socket.py` holds."""
     with pytest.raises(SystemExit) as failure:
         main(["evidence", *argv])
     assert failure.value.code == 2
