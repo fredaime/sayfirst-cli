@@ -6,6 +6,25 @@ declares; a release with no section fails the gate.
 
 ## Unreleased
 
+## 0.3.1
+
+- **`instrument verify` says how a run ended when the program raised, too.** The harness said
+  its own ending only for a program that returned, so a program that ended on an exception before
+  a line of it was seen — a script that does not compile, a module whose bytecode another Python
+  wrote — left no ending behind, and the command answered `4` and « the verification did not run
+  to a conclusion »: « the control plane could not be asked », about a plane that had answered.
+  It now answers `7`, « the verifier never saw the program's own code start », naming the
+  exception the program ended on; the program's own traceback is still printed. For the same
+  reason, a program that caught the abort of an unreadable chain and then raised an exception of
+  its own now gets the chain's ending (`4`, the transport's own problem code and sentence) rather
+  than the generic one.
+- The contract and the boundary move to 0.3.1, released with this client.
+- A `python` the shell cannot find is refused as before (64), and the refusal now names
+  the `python3` on the same PATH.
+- Every program the README and the quickstart run is spelled `python3 …`; the
+  quickstart starts the daemon again before section 7, shows a closed epoch verified,
+  and says how long a rejection stands.
+
 ## 0.3.0
 
 - **`--socket` is optional for a per-user profile**, on every verb that opens a connection. Given

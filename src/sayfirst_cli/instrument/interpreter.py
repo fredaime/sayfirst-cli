@@ -298,12 +298,23 @@ def selection(target: Sequence[str]) -> tuple[str, list[str]] | None:
 
 
 def locate(word: str) -> str:
-    """The interpreter a word names, as an absolute path, or the misuse that it names none."""
+    """The interpreter a word names, as an absolute path, or the misuse that it names none.
+
+    Nothing is substituted: a word the shell would not run is not run. But a stock
+    Debian or Ubuntu has `python3` and no `python`, so when the one named is absent and
+    `python3` is on the same PATH the refusal says so.
+    """
     found = shutil.which(word)
     if found is None:
+        hint = ""
+        if word != "python3" and shutil.which("python3") is not None:
+            hint = (
+                f" — this PATH has python3: name it (-- python3 …), or activate the "
+                f"environment that provides {word!r}"
+            )
         raise launch.LaunchMisuse(
             f"this launcher found no interpreter at {word!r}: a target whose first word is "
-            f"spelled like one is run by that interpreter, and there is none to run it"
+            f"spelled like one is run by that interpreter, and there is none to run it{hint}"
         )
     return os.path.abspath(found)
 

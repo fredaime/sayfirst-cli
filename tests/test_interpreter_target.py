@@ -594,3 +594,59 @@ def test_a_safe_path_is_kept_under_a_named_interpreter_too(
     )  # fmt: skip
     assert finished.returncode == 0, finished.stderr
     assert finished.stdout == plain.stdout
+
+
+def test_a_missing_python_names_the_python3_on_the_same_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stock Debian and Ubuntu have python3 and no python: say which is there."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    with pytest.raises(interpreter.launch.LaunchMisuse) as refusal:
+        interpreter.locate("python")
+    message = str(refusal.value)
+    assert "found no interpreter at 'python'" in message
+    assert "this PATH has python3" in message
+
+
+def test_a_missing_python_with_no_python3_names_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(interpreter.launch.LaunchMisuse) as refusal:
+        interpreter.locate("python")
+    assert "this PATH has" not in str(refusal.value)
+
+
+def test_a_missing_python3_is_not_pointed_at_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3.12").symlink_to(sys.executable)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    with pytest.raises(interpreter.launch.LaunchMisuse) as refusal:
+        interpreter.locate("python3")
+    assert "this PATH has" not in str(refusal.value)
+
+
+def test_the_command_names_the_python3_when_python_is_missing(tmp_path: Path) -> None:
+    """The same refusal, from the command a person types, on a PATH like stock Ubuntu's."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    marker = tmp_path / "ran"
+    (tmp_path / "app.py").write_text(f"open({str(marker)!r}, 'w').close()\n", encoding="utf-8")
+    pack = plant_spawn_pack(tmp_path)
+    environment = {**os.environ, "PATH": str(bin_dir)}
+    finished = instrument(
+        "run", "--pack", str(pack), "--socket", str(tmp_path / "absent.sock"), "--scope",
+        "local", "--", "python", "app.py", cwd=tmp_path, env=environment,
+    )  # fmt: skip
+    assert finished.returncode == exit_codes.EXIT_MISUSE, finished.stderr
+    assert "found no interpreter at 'python'" in finished.stderr
+    assert "this PATH has python3" in finished.stderr
+    assert "Traceback" not in finished.stderr
+    assert not marker.exists()

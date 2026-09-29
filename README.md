@@ -18,7 +18,8 @@ anything that matters: *may I do this, with these arguments, as this account?*
   the boundary (`sayfirst-boundary`) holds the grant for exactly one execution.
 - **A person is in the loop by construction, not by dashboard.** A suspension
   is a wait. `sayfirst approvals approve` ends it once, the deadline comes from
-  the policy, and a rejection is final.
+  the policy, and a rejection stands until that deadline, or until the daemon
+  restarts.
 - **Every decision leaves a record**, and `sayfirst evidence export` saves a
   bundle a third party verifies offline, with the contract alone.
 - **The evidence is honest about itself.** An export of an epoch the daemon has
@@ -39,7 +40,7 @@ flowchart LR
 ```console
 $ uv tool install sayfirst-cli --with-executables-from sayfirst-control-plane --with-executables-from sayfirstd
 $ sayfirst-daemon up --quickstart
-$ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
+$ sayfirst instrument run --pack subprocess --scope local -- python3 my_agent.py
 ```
 
 The first installs the client (`sayfirst`), the daemon (`sayfirst-daemon`) and
@@ -48,7 +49,7 @@ install` takes one package, so the other two ride on `--with-executables-from`.
 The second writes a readable starter policy and a per-user configuration under
 `~/.sayfirst/quickstart/` **if they are not there**, starts the real daemon in
 the background, and says « ready » only once that daemon has answered. The third
-runs a program you already have, under the `python` you named, with every
+runs a program you already have, under the `python3` you named, with every
 process it starts asked about first:
 
 ```console
@@ -60,7 +61,7 @@ policy: ~/.sayfirst/quickstart/policy.toml
 evidence: ~/.sayfirst/quickstart/evidence
 integrity grade: observability (the caller can write the store; the chain detects accidental corruption only)
 …
-$ sayfirst instrument run --pack subprocess --scope local -- python my_agent.py
+$ sayfirst instrument run --pack subprocess --scope local -- python3 my_agent.py
 hello
 ```
 
@@ -82,7 +83,7 @@ restarted — and running `up --quickstart` again never writes over it.
 
 ```console
 $ sayfirstd status            # what the daemon says about itself
-$ sayfirst instrument verify --pack subprocess --scope local -- python my_agent.py
+$ sayfirst instrument verify --pack subprocess --scope local -- python3 my_agent.py
 $ sayfirst-daemon down        # stops the daemon `up` started, and only that one
 ```
 
@@ -92,7 +93,7 @@ command on that page was run, in that order, before it was written down.
 
 ### What the index holds
 
-Everything the three commands above need is on the Python index at 0.3.0:
+Everything the three commands above need is on the Python index at 0.3.1:
 `sayfirst-cli`, the `sayfirst-contract` it speaks and the `sayfirst-boundary` a
 governed program holds its grants in, and the control plane's
 `sayfirst-control-plane` and `sayfirstd`. The first command installs all five
@@ -119,12 +120,13 @@ verified, and one answer rendered as it was given: allow, deny or suspend, and
 **It puts the boundary in front of somebody else's program.** `sayfirst
 instrument run --pack PACK … -- <program>` runs a program with the named effects
 asked about first, reversibly and writing nothing anywhere; a program spelled
-`python app.py` is handed, whole command and all, to the interpreter that was
-named, so it keeps its own environment's dependencies; `instrument verify`
-runs it again under the interpreter's own audit hook and proves, from that and
-the scope's evidence chain alone, that every effect of a named kind was preceded
-by a decision; `instrument apply` is reserved for the committed code
-modification and refuses, saying so. `sayfirst packs list` prints the packs this
+`python3 app.py` (or `python app.py` inside an activated environment) is
+handed, whole command and all, to the interpreter that was named, so it keeps
+its own environment's dependencies; `instrument verify` runs it again under the
+interpreter's own audit hook and proves, from that and the scope's evidence
+chain alone, that every effect of a named kind was preceded by a decision;
+`instrument apply` is reserved for the committed code modification and refuses,
+saying so. `sayfirst packs list` prints the packs this
 distribution ships — `database`, `http-client`, `subprocess` — each of which
 `--pack` takes by that name, while a pack of your own is a directory spelled
 with a separator, `--pack ./own-pack` ([`docs/PACKS.md`](docs/PACKS.md)). A program whose effects are
@@ -224,7 +226,7 @@ contract is built from a checkout of the control plane's repository, at the tag
 this client pins:
 
 ```console
-$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.3.0 ./scripts/gate.sh
+$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.3.1 ./scripts/gate.sh
 ```
 
 The workflow does the same and carries no credential of any kind: a fork can
@@ -251,9 +253,9 @@ GitHub's private reporting, never a public issue — [`LICENSE`](LICENSE),
 
 ## Status
 
-**0.2.0 is the first public release**, 2026-09-17. What is *not* here is named
-too, because a surface a reader assumes is an overclaim: `connect`, `profile`,
-`whoami`, `integrate` and `version` are in
+**0.2.0 is the first public release**, 2026-09-17. 0.3.1 is the current one.
+What is *not* here is named too, because a surface a reader assumes is an
+overclaim: `connect`, `profile`, `whoami`, `integrate` and `version` are in
 [`docs/PARTITION.md`](docs/PARTITION.md) and none of them exists here.
 
 Next, and only what a document in this tree already says: the `evidence` grade of

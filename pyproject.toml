@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [project]
 name = "sayfirst-cli"
-version = "0.3.0"
+version = "0.3.1"
 description = "The product command-line interface of the sayfirst control plane"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -20,7 +20,7 @@ classifiers = [
 # promise made here — it is measured after an install. `sayfirst-boundary` joins
 # it because a governed program holds a grant in it (article 10); it depends on
 # the contract only, and it is not the server (article 14).
-dependencies = ["sayfirst-contract==0.3.0", "sayfirst-boundary==0.3.0"]
+dependencies = ["sayfirst-contract==0.3.1", "sayfirst-boundary==0.3.1"]
 
 # The public repository this distribution sends a reader to, created fresh in
 # the act that published it (2026-09-17) under the names the operator chose for
@@ -41,7 +41,7 @@ sayfirst = "sayfirst_cli.main:run"
 dev = [
   "pytest==8.4.1",
   "ruff==0.12.12",
-  "sayfirst-contract[stub]==0.3.0",
+  "sayfirst-contract[stub]==0.3.1",
 ]
 
 [build-system]
