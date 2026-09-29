@@ -704,8 +704,8 @@ def test_a_gate_that_never_opens_judges_nothing_at_all() -> None:
     """A code object no resolved file matches leaves the gate shut for ever.
 
     Nothing is then judged, and the run must not conclude an absence it never
-    established: `_prove` answers « the verifier never saw the program's own
-    code start » and exit 4 rather than `not-exercised`
+    established: the harness answers « the verifier never saw the program's own
+    code start » and exit 7 rather than `not-exercised`
     (`test_a_gate_that_never_opened_says_so_and_reports_no_verdict` holds that
     end to end). This is the half of it that belongs to the watch.
     """
@@ -973,6 +973,62 @@ def test_a_chain_that_answered_and_then_stopped_is_a_finding_with_the_failure_be
     assert f"ungoverned process-effects subprocess.Popen {SPAWN} events=0" in stdout
     assert "the chain was read and then stopped answering" in stderr
     assert "this connection was opened on contract version" in stderr
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_a_chain_that_never_answered_is_said_when_the_program_then_raises_its_own(
+    tmp_path: Path, as_json: bool
+) -> None:
+    """The chain's ending survives a program that answers the abort with an exception of its own.
+
+    The abort is raised INTO the program, which may catch it — the case the
+    watch carries the problem for — and may then end on an exception of its
+    own. That exception used to leave the harness before it said how the run
+    ended, so the command read no outcome at all and answered the generic « did
+    not run to a conclusion » under a code it minted, `answer_unreadable`, in
+    place of the transport's `generation_unsupported` and its sentence. The
+    same 4, and a different, wrong account of why.
+
+    The program's own exception still reaches the error stream: it is the
+    program's diagnostic, and the harness saying its ending is no reason to
+    swallow it. Raised `from None`, so the transport's sentence can only reach
+    the stream by the harness saying it.
+    """
+    pack = plant_spawn_pack(tmp_path)
+    tree = a_quiet_tree(
+        tmp_path,
+        body=(
+            "import subprocess\n\n"
+            "try:\n"
+            "    subprocess.run(['true'], check=True)\n"
+            "except RuntimeError:\n"
+            "    raise LookupError('the program ended in its own way') from None\n"
+        ),
+    )
+    routes = {"/scopes/": (200, [no_evidence_page(), foreign_generation_page()])}
+    with answering_by_path(tmp_path / "d.sock", routes) as address:
+        code, stdout, stderr = verify(
+            "--pack",
+            str(pack),
+            "--socket",
+            str(address),
+            "--scope",
+            "local",
+            "--ungoverned",
+            *(["--json"] if as_json else []),
+            "--",
+            "app.py",
+            cwd=tree,
+        )
+    assert code == exit_codes.EXIT_COULD_NOT_ASK, (stdout, stderr)
+    assert "did not run to a conclusion" not in stdout + stderr
+    assert "the chain could not be read while the program ran" in stderr
+    assert "this connection was opened on contract version" in stderr
+    assert "LookupError: the program ended in its own way" in stderr
+    if as_json:
+        assert json.loads(stdout)["problem"]["code"] == "generation_unsupported"
+    else:
+        assert stdout == ""
 
 
 # --- `--json` answers in the envelope on every path -----------------------------
@@ -1658,6 +1714,91 @@ def test_a_gate_that_never_opened_says_so_and_reports_no_verdict(
         envelope = json.loads(stdout)
         assert envelope["problem"]["code"] == "answer_unreadable"
         assert "never saw the program's own code start" in envelope["problem"]["message"]
+    else:
+        assert stdout == ""
+
+
+def a_program_that_never_starts(root: Path, shape: str, marker: Path) -> tuple[Path, list[str]]:
+    """A target the interpreter gives up on before a line of it runs, and how to name it.
+
+    `syntax` is a script that does not compile. `foreign-bytecode` is a `-m`
+    module whose only form is bytecode this interpreter will not load — the
+    shape a `.pyc` written by another Python version takes, read here as a magic
+    number no interpreter uses. Either would leave `marker` behind if a line of
+    it ran, which is how the test knows that none did.
+    """
+    tree = root / shape
+    tree.mkdir()
+    spawn = f"import subprocess\n\nsubprocess.run(['touch', {str(marker)!r}], check=True)\n"
+    if shape == "syntax":
+        (tree / "app.py").write_text(spawn + "subprocess.run(['true']\n", encoding="utf-8")
+        return tree, ["app.py"]
+    source = tree / "solo.py"
+    source.write_text(spawn, encoding="utf-8")
+    compiled = tree / "solo.pyc"
+    py_compile.compile(str(source), cfile=str(compiled), doraise=True)
+    source.unlink()
+    with compiled.open("r+b") as bytecode:
+        bytecode.write(b"\xff\xff\r\n")
+    return tree, ["-m", "solo"]
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize(
+    ("shape", "ended_on"), [("syntax", "SyntaxError"), ("foreign-bytecode", "ImportError")]
+)
+def test_a_program_that_never_started_says_so_and_reports_no_verdict(
+    tmp_path: Path, shape: str, ended_on: str, as_json: bool
+) -> None:
+    """Exit 7 and the sentence, for a program the interpreter never began.
+
+    Measured as the defect, through the shipped command against a real daemon
+    that had answered: a script with a syntax error, and a module whose bytecode
+    another Python wrote, each ended `verify` with exit 4 and « the verification
+    did not run to a conclusion » — which a shell reads as « the control plane
+    could not be asked », about a plane that had been asked. The harness said
+    its own ending only when the program RETURNED; one that raised on its way
+    in left no outcome file, and an absent file is the reading reserved for a
+    harness that never reached its own first statement.
+
+    The gate never opened, so this is the ending `docs/PACKS.md` gives a run
+    that never saw the program's own code start: 7, because the plane was asked
+    and what could not be done was the watching. The sentence says what the
+    program ended on and does NOT say the interpreter ran it: nothing ran, which
+    is what the marker proves, and the bytecode explanation beside the other
+    shape of this ending would be a fact this run never observed.
+    """
+    pack = plant_spawn_pack(tmp_path)
+    marker = tmp_path / "ran"
+    tree, target = a_program_that_never_starts(tmp_path, shape, marker)
+    with answering_by_path(tmp_path / "d.sock", {"/scopes/": (200, no_evidence_page())}) as address:
+        code, stdout, stderr = verify(
+            "--pack",
+            str(pack),
+            "--socket",
+            str(address),
+            "--scope",
+            "local",
+            "--ungoverned",
+            *(["--json"] if as_json else []),
+            "--",
+            *target,
+            cwd=tree,
+        )
+    assert code == exit_codes.EXIT_COULD_NOT_CHECK, (stdout, stderr)
+    assert code != exit_codes.EXIT_COULD_NOT_ASK
+    assert not marker.exists(), "a line of the program ran, so this is not the shape under test"
+    assert "not-exercised" not in stdout + stderr
+    assert "did not run to a conclusion" not in stdout + stderr
+    assert "the interpreter ran it" not in stdout + stderr
+    # The harness says it on its own stream whichever rendering was asked for.
+    assert "never saw the program's own code start" in stderr
+    assert f"ended on {ended_on}" in stderr
+    if as_json:
+        envelope = json.loads(stdout)
+        assert envelope["problem"]["code"] == "answer_unreadable"
+        assert "never saw the program's own code start" in envelope["problem"]["message"]
+        assert f"ended on {ended_on}" in envelope["problem"]["message"]
     else:
         assert stdout == ""
 

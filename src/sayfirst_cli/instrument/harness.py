@@ -216,12 +216,21 @@ SEPARATOR: Final[str] = "--"
 
 #: What a run says when it never saw the program's own code begin. It is not a
 #: verdict and it is not `not-exercised`: nothing was watched, so nothing about
-#: the program was established — not even an absence.
+#: the program was established — not even an absence. WHY it never began is said
+#: beside it and not in it, because there are two answers and they are opposite
+#: facts about the program: it ran without being seen (`RAN_UNSEEN`), or it
+#: ended on an exception before this run saw a line of it — a script that does
+#: not compile, bytecode another Python wrote — and may never have run at all.
 NEVER_STARTED: Final[str] = (
     "the verifier never saw the program's own code start, so nothing about this program "
-    "was watched and no verdict is reported: the interpreter ran it from a code object "
-    "that carries no file this run resolved, which is what a module shipped as bytecode "
-    "with no source beside it looks like"
+    "was watched and no verdict is reported"
+)
+
+#: Why, for a program that ended without raising: the interpreter ran code this
+#: run could not recognise as the program's own.
+RAN_UNSEEN: Final[str] = (
+    "the interpreter ran it from a code object that carries no file this run resolved, "
+    "which is what a module shipped as bytecode with no source beside it looks like"
 )
 
 #: The configuration member naming the file this harness says its own ending in.
@@ -413,8 +422,8 @@ class Watch:
     that matters. A target whose executed code object does not carry a file the
     lookup resolved — a module shipped as bytecode with no source beside it —
     leaves this gate shut, and a run whose gate never opened concludes nothing
-    at all: it says so and answers « could not read », rather than reporting
-    the absence it never established (`_prove` says where).
+    at all: it says so and answers « could not check », rather than reporting
+    the absence it never established (`_say_how_the_run_ended` says where).
 
     **Not inside a consultation.** A consultation reads the chain, and those
     reads are themselves acts the interpreter reports. Per thread, so an event
@@ -923,6 +932,7 @@ def _prove(
     sys.addaudithook(_consulting(chain, by_event, uninterposed, watch, inner))
     ending: int | None = None
     refused_the_invocation = False
+    raised: BaseException | None = None
     try:
         ending = _run_the_target(configured, packs, target, watch, correlation)
     except HarnessMisuse as misuse:
@@ -950,6 +960,17 @@ def _prove(
         # the `finally`, from the watch rather than from here, so that a target
         # which caught the exception cannot bury it.
         pass
+    except BaseException as failure:  # held, said, and raised again below
+        # The program's own ending, or the interpreter's refusal to begin it — a
+        # script that does not compile, bytecode another Python wrote. It used
+        # to leave this function before anything below said how the run ended,
+        # and the command read the missing outcome as « the harness never
+        # reached its own first statement »: exit 4, « could not ask », about a
+        # plane that had been asked and had answered. So it is held here, the
+        # run's ending is said below exactly as for a program that returned, and
+        # it is raised again last: the traceback the interpreter renders is the
+        # program's diagnostic, and saying an ending is no reason to swallow it.
+        raised = failure
     finally:
         # The program is not done because its main module returned, so the
         # watch stays armed until it is — its own threads run out and its own
@@ -966,6 +987,26 @@ def _prove(
         ):
             with watch.ours():
                 _write_report(configured, packs, watched, head, ending, connection)
+    answered = _say_how_the_run_ended(say, watch, target, raised)
+    if raised is not None:
+        raise raised
+    return answered
+
+
+def _say_how_the_run_ended(
+    say: Callable[..., None],
+    watch: Watch,
+    target: Sequence[str],
+    raised: BaseException | None,
+) -> int:
+    """Which of this harness's own endings happened, said whichever way the program ended.
+
+    `raised` is what the program ended on, or `None` for a program that
+    returned. It changes one thing: WHY a gate that never opened stayed shut.
+    Everything else is the same ending for a program that raised as for one
+    that returned — which is the point, since the command reads the ending and
+    never the program's number.
+    """
     if watch.unreadable is not None:
         say(
             CHAIN_UNREADABLE_DURING,
@@ -983,14 +1024,34 @@ def _prove(
         # `not-exercised`, byte for byte — so a run that watched nothing at all
         # read exactly like a run that established an absence, which is the
         # distinction the rest of this file is fastidious about (article 2).
-        say(GATE_NEVER_OPENED, " ".join(target))
-        sys.stderr.write(f"{NEVER_STARTED}\n")
+        named = " ".join(target)
+        if raised is None:
+            why = f"{RAN_UNSEEN}: {named}"
+        else:
+            why = f"{named} ended on {_ended_on(raised)}"
+        say(GATE_NEVER_OPENED, why)
+        sys.stderr.write(f"{NEVER_STARTED}: {why}\n")
         return exit_codes.EXIT_COULD_NOT_CHECK
     # No detail: the only path that reads this one is a report that will not
     # parse, and the report lives in a directory the command removes before the
     # reader ever sees the sentence — a path nobody can open is worse than none.
     say(REPORTED, "")
     return exit_codes.EXIT_ALLOW
+
+
+def _ended_on(raised: BaseException) -> str:
+    """The exception a program ended on: its class's name, and its message when it has one.
+
+    The message is the program's own text, which is the program's to get wrong: a `__str__`
+    that raises must not cost the run the ending it is about to say, so it
+    costs only the message.
+    """
+    name = type(raised).__name__
+    try:
+        message = str(raised)
+    except Exception:  # any failure of the program's own text
+        return name
+    return f"{name}: {message}" if message else name
 
 
 def _wait_for_the_program(chain: Chain) -> None:

@@ -156,15 +156,19 @@ and why it is measured rather than guarded.
 
 A run can also report **no verdict at all**: the chain could not be read —
 before the program started, or while it ran — and it exits `4`; or the
-verifier never saw the program's own code start (a target the interpreter runs
-from bytecode with no source beside it), and it exits `7`, because the plane
-was asked and what could not be done was the watching. None of these is a
-verdict about the program, and none is rendered as one; each carries its own
-problem code and its own sentence, because « this run established an
-absence », « this run never began watching » and « the chain could not be
-read » are different facts. The harness says which of its own endings happened
-in a file of its own, so the answer is never chosen by the number the verified
-program happened to exit with.
+verifier never saw the program's own code start, and it exits `7`, because the
+plane was asked and what could not be done was the watching. The second has
+two causes and the sentence names which: a target the interpreter runs from
+bytecode with no source beside it, which ran unseen; or a program that ended on
+an exception before a line of it was seen — a script that does not compile, a
+module whose bytecode another Python wrote — named with the exception it ended
+on. None of these is a verdict about the program, and none is rendered as one;
+each carries its own problem code and its own sentence, because « this run
+established an absence », « this run never began watching » and « the chain
+could not be read » are different facts. The harness says which of its own
+endings happened in a file of its own, whether the program returned or raised,
+so the answer is never chosen by the number the verified program happened to
+exit with.
 A chain read the control plane **refused** — a scope it will not read, a
 principal it does not admit — exits `3` instead, as it does for every other
 command of this client: the plane was asked, and it said no. The harness writes

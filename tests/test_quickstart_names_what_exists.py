@@ -111,3 +111,27 @@ def test_the_rule_fires_on_a_verb_the_command_lacks() -> None:
 def test_the_rule_fires_on_a_flag_the_verb_lacks() -> None:
     text = help_text(["ask"])
     assert "--url" not in text, "the planted flag exists now; choose another"
+
+
+PAGES = (REPOSITORY / "README.md", QUICKSTART, REPOSITORY / "docs" / "PACKS.md")
+_BARE_PYTHON = re.compile(r"(?:\s--\s|^\$\s)python(?:\s|$)")
+
+
+def test_no_command_on_a_page_starts_a_bare_python() -> None:
+    """Stock Debian and Ubuntu have no `python`: a page that types one sends a reader to 64."""
+    offenders = [
+        f"{page.name}: {line}"
+        for page in PAGES
+        for block in console_blocks(page.read_text(encoding="utf-8"))
+        for line in block.splitlines()
+        if _BARE_PYTHON.search(line)
+    ]
+    assert offenders == [], offenders
+
+
+def test_the_quickstart_starts_the_daemon_again_before_asking_by_hand() -> None:
+    """Section 6 ends with `down`; section 7's first ask needs a daemon."""
+    text = QUICKSTART.read_text(encoding="utf-8")
+    seven = text.split("\n## 7.", 1)[1].split("\n## 8.", 1)[0]
+    first_command = next(line for line in seven.splitlines() if line.startswith("$ "))
+    assert first_command == "$ sayfirst-daemon up --quickstart", first_command
