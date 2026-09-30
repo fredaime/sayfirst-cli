@@ -12,14 +12,11 @@ $ sayfirst instrument run --pack subprocess --scope local -- python3 my_agent.py
 
 Everything on this page was run, in this order, before it was written down: the
 commands are pasted from that run, and so are their answers. The run installed
-0.3.2 with the first command from wheels built from the two release trees,
-given `--no-index` (the walk ran before 0.3.2 reached the index; « From
-checkouts instead » below is that install), on a PATH with `python3` and no
-`python`, in a shell with neither repository on any path, under a home
-directory made for it;
-its paths are written here the way they read under an ordinary account (`~`, and
-`/run/user/1000` for the runtime directory). Your identifiers, timestamps and
-hashes will differ; the shapes will not.
+0.3.2 with the first command from the Python index, on a PATH with `python3`
+and no `python`, in a shell with neither repository on any path, under a home
+directory made for it; its paths are written here the way they read under an
+ordinary account (`~`, and `/run/user/1000` for the runtime directory). Your
+identifiers, timestamps and hashes will differ; the shapes will not.
 
 ## What you need
 
