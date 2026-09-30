@@ -15,7 +15,9 @@ anything that matters: *may I do this, with these arguments, as this account?*
   person can read, over a Unix socket that tells it who is asking from the
   kernel's own credentials. No URL, no token, nothing to leak (article 6).
 - **The program never decides.** It asks, and it does only what was allowed:
-  the boundary (`sayfirst-boundary`) holds the grant for exactly one execution.
+  the boundary (`sayfirst-boundary`) holds the grant a policy allow serves, for the run;
+  an allow that a person's approval produced carries no grant — it runs the act
+  once, and the same act asked again waits under a new approval.
 - **A person is in the loop by construction, not by dashboard.** A suspension
   is a wait. `sayfirst approvals approve` ends it once, the deadline comes from
   the policy, and a rejection stands until that deadline, or until the daemon
@@ -93,7 +95,7 @@ command on that page was run, in that order, before it was written down.
 
 ### What the index holds
 
-Everything the three commands above need is on the Python index at 0.3.1:
+Everything the three commands above need is on the Python index at 0.3.2:
 `sayfirst-cli`, the `sayfirst-contract` it speaks and the `sayfirst-boundary` a
 governed program holds its grants in, and the control plane's
 `sayfirst-control-plane` and `sayfirstd`. The first command installs all five
@@ -226,7 +228,7 @@ contract is built from a checkout of the control plane's repository, at the tag
 this client pins:
 
 ```console
-$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.3.1 ./scripts/gate.sh
+$ SAYFIRST_CONTRACT_SOURCE=../sayfirst-control-plane SAYFIRST_CONTRACT_REF=v0.3.2 ./scripts/gate.sh
 ```
 
 The workflow does the same and carries no credential of any kind: a fork can
@@ -253,7 +255,7 @@ GitHub's private reporting, never a public issue — [`LICENSE`](LICENSE),
 
 ## Status
 
-**0.2.0 is the first public release**, 2026-09-17. 0.3.1 is the current one.
+**0.2.0 is the first public release**, 2026-09-17. 0.3.2 is the current one.
 What is *not* here is named too, because a surface a reader assumes is an
 overclaim: `connect`, `profile`, `whoami`, `integrate` and `version` are in
 [`docs/PARTITION.md`](docs/PARTITION.md) and none of them exists here.

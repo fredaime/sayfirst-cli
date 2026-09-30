@@ -237,7 +237,9 @@ is stepped over when any of them does not.
   are not the same order. **Which is why a verifying run holds no grant.**
   Under `instrument run` the boundary keeps what it was granted (article 10),
   and an identical effect repeated while that grant lives is answered by it
-  with nothing asked and nothing recorded. Under `verify` the boundary in front
+  with nothing asked and nothing recorded. An allow that a person's approval
+  produced carries no grant: it runs the act once, and the same act asked again
+  waits under a new approval. Under `verify` the boundary in front
   of the program asks for every effect, so every effect has a record of its
   own: a program that spawns the same command twice is two decisions there,
   and one there would read the second spawn as ungoverned.
