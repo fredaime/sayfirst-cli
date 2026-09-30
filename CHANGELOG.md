@@ -6,6 +6,13 @@ declares; a release with no section fails the gate.
 
 ## Unreleased
 
+## 0.3.2
+
+- The contract and the boundary move to 0.3.2, which carries security fixes.
+  Under `sayfirst instrument run`, an act a person approved now runs once;
+  asked again, it waits under a new approval.
+- The pages say that an allow produced by an approval carries no grant.
+
 ## 0.3.1
 
 - **`instrument verify` says how a run ended when the program raised, too.** The harness said

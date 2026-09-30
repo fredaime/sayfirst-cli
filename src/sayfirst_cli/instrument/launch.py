@@ -152,7 +152,7 @@ def run(
 
     `hold_grants=False` asks for every effect and holds no grant. The verifier
     runs this way: its proof is one recorded decision for each effect it saw,
-    and a grant hit — an identical effect answered by an earlier allow, which is
+    and a grant hit — an identical effect answered by an earlier allow the policy gave, which is
     what `run` does (article 10) — records nothing, so a repeated effect would
     read as ungoverned.
     """

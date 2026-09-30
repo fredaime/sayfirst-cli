@@ -12,8 +12,8 @@ $ sayfirst instrument run --pack subprocess --scope local -- python3 my_agent.py
 
 Everything on this page was run, in this order, before it was written down: the
 commands are pasted from that run, and so are their answers. The run installed
-0.3.1 with the first command from wheels built from the two release trees,
-given `--no-index` (the walk ran before 0.3.1 reached the index; « From
+0.3.2 with the first command from wheels built from the two release trees,
+given `--no-index` (the walk ran before 0.3.2 reached the index; « From
 checkouts instead » below is that install), on a PATH with `python3` and no
 `python`, in a shell with neither repository on any path, under a home
 directory made for it;
@@ -29,11 +29,12 @@ hashes will differ; the shapes will not.
   and macOS name it that; inside an activated virtual environment `python`
   works too), and [`uv`](https://docs.astral.sh/uv/). The walk used
   uv 0.12.
-- A home directory that only you can write. The daemon refuses a directory a
-  group can write and that is not sticky: below the socket as
-  `socket_directory_unprotected`, and above the policy as
-  `policy_unavailable_at_start … exposed: group_write`; either way it says so
-  instead of starting.
+- A home directory that only you can write. The daemon refuses to start if
+  the socket's directory, or any directory on the way to it, can be written
+  by a group or by others and is not sticky (`socket_directory_unprotected`),
+  and likewise for the policy's directory and those above it
+  (`policy_unavailable_at_start … exposed: group_write`); either way it says
+  so instead of starting.
 
 ## 1. Install
 
@@ -42,11 +43,11 @@ $ uv tool install sayfirst-cli --with-executables-from sayfirst-control-plane --
 Resolved 5 packages in 3ms
 Prepared 5 packages in 6ms
 Installed 5 packages in 1ms
- + sayfirst-boundary==0.3.1
- + sayfirst-cli==0.3.1
- + sayfirst-contract==0.3.1
- + sayfirst-control-plane==0.3.1
- + sayfirstd==0.3.1
+ + sayfirst-boundary==0.3.2
+ + sayfirst-cli==0.3.2
+ + sayfirst-contract==0.3.2
+ + sayfirst-control-plane==0.3.2
+ + sayfirstd==0.3.2
 Installed 1 executable from `sayfirst-control-plane`: sayfirst-daemon
 Installed 1 executable from `sayfirstd`: sayfirstd
 Installed 1 executable: sayfirst
