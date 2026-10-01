@@ -57,6 +57,7 @@ def _reader_facing() -> list[Path]:
     """
     found = [path for path in sorted(REPOSITORY.glob("*.md")) if path.is_file()]
     found += [path for path in sorted(REPOSITORY.glob("docs/**/*.md")) if path.is_file()]
+    found += [path for path in sorted(REPOSITORY.glob("umbrella/*.md")) if path.is_file()]
     notice = REPOSITORY / "NOTICE"
     if notice.is_file():
         found.append(notice)
