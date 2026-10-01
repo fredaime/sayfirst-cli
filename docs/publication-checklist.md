@@ -64,15 +64,28 @@ the hosting platform.
   over exactly what will be pushed, before the push, so that every claim the guards hold is
   checked rather than asserted. Let the private address in `SECURITY.md` leave in the same change.
 - [ ] **Change the display name before the tag if wanted.** The author recorded in this
-  repository's one project file is `fredaime <frederic.aime@gmail.com>`, which is the identity
-  every commit is signed off under. A different display name for the index is a change to that
-  file's `authors` table, before the tag.
+  repository's two project files is `fredaime <frederic.aime@gmail.com>`, which is the identity
+  every commit is signed off under. A different display name for the index is a change to the
+  `authors` table of both, in one commit, before the tag:
+  `tests/test_umbrella_metadata_agrees_with_the_client.py` holds them equal.
 - [ ] **Require a reviewer on the `pypi` deployment environment, and create the trusted-publishing
   relationship** for this repository's release workflow on the index itself. The release workflow
   names the environment and asks for `id-token: write` instead of a stored token; whether the
   environment demands an approval, and whether the index trusts this workflow's identity, are
   settings of the repository and of the index that no file here can read, and none of them claims
   to.
+- [ ] **Create a pending publisher for every project the index does not know yet.** A release
+  that adds a project uploads its files one at a time and stops at the first file of a project
+  the index does not know: what was sent before it stays, which may be nothing or part of a
+  project, and a file the index already holds cannot be sent again. A project that has never
+  been uploaded is trusted by nothing until a pending publisher names it. For `sayfirst`, first
+  released in 0.3.3: on the index, under the account's publishing settings, add a pending
+  publisher with the project name `sayfirst`, this public repository, the workflow
+  `release.yml` and the environment `pypi`. The index refused a second pending publisher for
+  one repository, workflow and environment on 2026-09-17, so a release that adds two projects
+  the index does not know is two releases, or one upload by hand. No file here can read whether
+  it was done, and a release rehearsed with publishing switched off cannot either, since it
+  uploads nothing.
 - [ ] **Set the sign-off check as a required status** in the public repository's branch protection.
   Contributions arrive under the Developer Certificate of Origin (article 15), and whether a
   failing check blocks a merge is a branch-protection setting of the public repository which no

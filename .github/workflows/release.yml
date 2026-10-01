@@ -8,12 +8,12 @@ name: release
 # that starts a publication is the operator's tag and nothing else: there is no
 # `branches:` under `push` and no `pull_request:` here, and
 # `tests/test_release_workflow_publishes_only_on_a_tag.py` fails if either
-# arrives. A tag naming a version this distribution does not carry is refused
-# by name in the build and publishes nothing.
+# arrives. A tag naming a version the two distributions built here do not
+# carry is refused by name in the build and publishes nothing.
 #
 # The dry run exists so the mechanics are proven BEFORE the marks rather than
 # discovered after them: started by hand with publishing switched off, it runs
-# the gate, builds the distribution and checks the artefact, and stops.
+# the gate, builds the distributions and checks the artefacts, and stops.
 #
 # WHERE THIS WORKFLOW READS THE CONTRACT, AND WHY IT IS NOT WHERE `ci.yml`
 # READS IT. The gate builds `sayfirst-contract` from a checkout of the control
@@ -72,7 +72,7 @@ permissions:
 
 jobs:
   build:
-    name: build and check the distribution
+    name: build and check the distributions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -95,12 +95,12 @@ jobs:
           echo "::error::a dispatch publishes nothing: re-run it with publish false to dry-run, and publish by tagging"
           exit 1
 
-      - name: The tag names the version this distribution carries
+      - name: The tag names the version the distributions carry
         if: github.event_name == 'push'
         working-directory: sayfirst-cli
         run: uv run --no-project --python 3.12 python scripts/release_version.py --expect "${GITHUB_REF_NAME#v}"
 
-      - name: The distribution carries a version
+      - name: The distributions carry one version
         if: github.event_name == 'workflow_dispatch'
         working-directory: sayfirst-cli
         run: uv run --no-project --python 3.12 python scripts/release_version.py
@@ -160,8 +160,8 @@ jobs:
             0)
               echo "### gate: full green" >> "$GITHUB_STEP_SUMMARY"
               echo "" >> "$GITHUB_STEP_SUMMARY"
-              echo "Format, lint, every test and the dependency-closure guard of articles 13" >> "$GITHUB_STEP_SUMMARY"
-              echo "and 14 ran against the contract this release pins." >> "$GITHUB_STEP_SUMMARY"
+              echo "Format, lint, every test, the dependency-closure guard of articles 13 and 14" >> "$GITHUB_STEP_SUMMARY"
+              echo "and the umbrella's install check ran against the contract this release pins." >> "$GITHUB_STEP_SUMMARY"
               ;;
             75)
               echo "::error::the gate came back reduced: a release is never cut from a reduced gate"
@@ -172,9 +172,16 @@ jobs:
               ;;
           esac
 
-      - name: Build the distribution
+      # Two projects, one `dist/`: the client, and the umbrella that installs
+      # the product whole. The publish job uploads what is left here, so a
+      # project this step does not build is a distribution a tag does not
+      # publish; `tests/test_release_builds_every_distribution.py` holds the
+      # two lines against the projects the version reader reads.
+      - name: Build the distributions
         working-directory: sayfirst-cli
-        run: uv build --out-dir dist
+        run: |
+          uv build --out-dir dist
+          uv build umbrella --out-dir dist
       # The checker is pinned, as the control plane's is and to the same version:
       # an unpinned checker is a check whose rules can change between two
       # releases without either release changing.

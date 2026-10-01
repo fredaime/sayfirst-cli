@@ -11,12 +11,16 @@ $ sayfirst instrument run --pack subprocess --scope local -- python3 my_agent.py
 ```
 
 Everything on this page was run, in this order, before it was written down: the
-commands are pasted from that run, and so are their answers. The run installed
-0.3.2 with the first command from the Python index, on a PATH with `python3`
-and no `python`, in a shell with neither repository on any path, under a home
-directory made for it; its paths are written here the way they read under an
-ordinary account (`~`, and `/run/user/1000` for the runtime directory). Your
-identifiers, timestamps and hashes will differ; the shapes will not.
+commands are pasted from a run, and so are their answers. The walk recorded for
+this release installed 0.3.3 with the first command from wheels built from the
+two release trees, given `--no-index` (it ran before 0.3.3 reached the index;
+« From checkouts instead » below is that install), on a PATH with `python3` and
+no `python`, in a shell with neither repository on any path, under a home
+directory made for it. It answered in the same shapes as the walk whose answers
+are printed here, which is an earlier release's: only the five versions of
+section 1 were moved. Paths are written the way they read under an ordinary
+account (`~`, and `/run/user/1000` for the runtime directory). Your
+identifiers, timestamps, sizes and hashes will differ; the shapes will not.
 
 ## What you need
 
@@ -40,11 +44,11 @@ $ uv tool install sayfirst-cli --with-executables-from sayfirst-control-plane --
 Resolved 5 packages in 3ms
 Prepared 5 packages in 6ms
 Installed 5 packages in 1ms
- + sayfirst-boundary==0.3.2
- + sayfirst-cli==0.3.2
- + sayfirst-contract==0.3.2
- + sayfirst-control-plane==0.3.2
- + sayfirstd==0.3.2
+ + sayfirst-boundary==0.3.3
+ + sayfirst-cli==0.3.3
+ + sayfirst-contract==0.3.3
+ + sayfirst-control-plane==0.3.3
+ + sayfirstd==0.3.3
 Installed 1 executable from `sayfirst-control-plane`: sayfirst-daemon
 Installed 1 executable from `sayfirstd`: sayfirstd
 Installed 1 executable: sayfirst

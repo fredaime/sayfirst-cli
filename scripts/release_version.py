@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """The one reader of « the version this tree would release ».
 
-This repository builds one distribution, so the reading is short; it is written
-as a module rather than inline in two callers for the same reason the control
-plane's is — the changelog guard and the release workflow must agree about the
-version, and a version spelled twice is a version that will eventually be
-spelled two ways.
+This repository builds two distributions — the client, and the umbrella that
+installs the product whole — and releases them under one version. The reading is
+written as a module rather than inline in two callers for the same reason the
+control plane's is — the changelog guard and the release workflow must agree
+about the version, and a version spelled twice is a version that will eventually
+be spelled two ways.
 
 The release workflow runs this through uv's own interpreter, never the runner's
 system `python`, and passes `--no-project`: this project's own `uv run` cannot
@@ -29,38 +30,44 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 
+#: Where each project file this repository builds from lives, relative to its
+#: root. The client's is the root's own; the umbrella's is one directory down.
+#: A project file that is absent is skipped, so a tree that builds only the
+#: client is still read; one that is present and declares no version is
+#: refused.
+PROJECT_DIRECTORIES: tuple[str, ...] = (".", "umbrella")
+
 
 def distribution_versions(repository: Path) -> dict[str, str]:
-    """The distribution this repository builds, and the version it carries.
+    """Each distribution this repository builds, and the version it carries.
 
-    Raises `ValueError` naming the project file when it declares no version. A
+    Raises `ValueError` naming the project file when one declares no version. A
     project file with no `version` is a mistake somebody made, not a release
     candidate, and the reading has to say which file it read: the alternative is
     a `KeyError` in the middle of a release step, which reports a crash rather
     than a refusal and names nothing a reader can go and open.
     """
-    project_file = repository / "pyproject.toml"
-    project = tomllib.loads(project_file.read_text(encoding="utf-8"))["project"]
-    if "version" not in project:
-        raise ValueError(f"{project_file} declares no version, so this tree has none to release")
-    return {project["name"]: project["version"]}
+    versions: dict[str, str] = {}
+    for directory in PROJECT_DIRECTORIES:
+        project_file = (repository / directory / "pyproject.toml").resolve()
+        if directory != "." and not project_file.is_file():
+            continue
+        project = tomllib.loads(project_file.read_text(encoding="utf-8"))["project"]
+        if "version" not in project:
+            raise ValueError(
+                f"{project_file} declares no version, so this tree has none to release"
+            )
+        versions[project["name"]] = project["version"]
+    return versions
 
 
 def release_version(repository: Path) -> str:
     """The version this tree would release.
 
-    Raises `ValueError` when the project file declares none — the reading above
-    refuses it — so that a caller gets a refusal rather than a `KeyError` from
-    the middle of a workflow.
-
-    The branch below, which refuses several distributions carrying several
-    versions, is reachable only when the reading finds more than one
-    distribution. This repository builds one, so it cannot fire here. It is kept
-    because the shape is shared with the control plane's reader, where the
-    reading walks a directory of distributions and can find two versions among
-    them; one shape for one rule is how the two readers go on agreeing, and a
-    branch held for parity is worth more than a reading that would have to grow
-    the day this repository builds a second distribution.
+    Raises `ValueError` when a project file declares none — the reading above
+    refuses it — and when the distributions carry more than one version, so
+    that a caller gets a refusal rather than a `KeyError` from the middle of a
+    workflow, and a tag never publishes two distributions under two numbers.
     """
     versions = distribution_versions(repository)
     distinct = sorted(set(versions.values()))
@@ -82,8 +89,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     if arguments.expect is not None and arguments.expect != version:
         print(
-            f"release_version: the tag names {arguments.expect} and this distribution "
-            f"carries {version}; nothing is published",
+            f"release_version: the tag names {arguments.expect} and the distributions "
+            f"carry {version}; nothing is published",
             file=sys.stderr,
         )
         return 1

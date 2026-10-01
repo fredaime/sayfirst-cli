@@ -11,6 +11,11 @@
 #                                     articles 13 and 14, measured on a real
 #                                     install, and proving on every run that it
 #                                     can fail
+#   umbrella scripts/check_umbrella_install.py
+#                                     what installing `sayfirst` brings, measured
+#                                     on a real install: six distributions, three
+#                                     commands that start, each one declared word
+#                                     for word by the distribution that owns it
 #
 # The contract this client pins is built from source, never taken from an index:
 # the version a change pins may not be on one yet (it is published with the
@@ -41,11 +46,12 @@
 # What a reduced run does not prove: nothing about the contract, its generation
 # marker or its golden scenarios; nothing about the installed dependency closure
 # of articles 13 and 14, whose guard installs the contract in order to measure
-# it; and — as of this writing, and readable in the list the run prints rather
-# than promised here — nothing about this client against a daemon, because the
-# tests that start one are among the ones it could not run. It proves that the
-# source is formatted, that it lints, and that the guards reading only this
-# repository's own files still hold.
+# it; nothing about what installing `sayfirst` brings, whose guard installs the
+# daemon in order to measure it; and — as of this writing, and readable in the
+# list the run prints rather than promised here — nothing about this client
+# against a daemon, because the tests that start one are among the ones it
+# could not run. It proves that the source is formatted, that it lints, and
+# that the guards reading only this repository's own files still hold.
 #
 # Which tests need the contract is decided by watching them ask for it, never by
 # a list here: `tests/contract_absence.py` holds the rule, this script reads back
@@ -187,7 +193,11 @@ if [ "$mode" = full ]; then
   echo "== closure (articles 13 and 14) =="
   "$python" scripts/check_dependency_closure.py \
     --contract-source "$materialised" --python "$python_version"
-  echo "gate: full green — format, lint, $modules_run test modules and the closure check ran."
+  echo "== umbrella (the product installed whole) =="
+  "$python" scripts/check_umbrella_install.py \
+    --contract-source "$materialised" --python "$python_version"
+  echo "gate: full green — format, lint, $modules_run test modules, the closure check"
+  echo "gate: and the umbrella's install check ran."
   exit "$GATE_FULL_GREEN"
 fi
 
@@ -203,19 +213,20 @@ if [ "$modules_run" -lt 1 ]; then
   exit 1
 fi
 
-echo "gate: contract absent: $((checks_not_run + 1)) checks not run"
+echo "gate: contract absent: $((checks_not_run + 2)) checks not run"
 while IFS=$'\t' read -r kind what why; do
   [ -n "$what" ] || continue
   echo "gate:   not run: $what — $why"
 done <"$not_run"
 echo "gate:   not run: closure (articles 13 and 14) — it installs the contract to measure it"
+echo "gate:   not run: umbrella (the product installed whole) — it installs the daemon to measure it"
 echo "gate: reduced green — format, lint and $modules_run of $modules_present test modules ran."
 echo "gate: A check counted above is a test module, a single test, or a named step. The"
 echo "gate: tests inside a module that would not import cannot be counted, and are not:"
 echo "gate: this run does not know how many of them there are."
 echo "gate: This is not a pass. It proves nothing about the contract, nothing about the"
-echo "gate: installed closure of articles 13 and 14, and — read the list above rather than"
-echo "gate: this line — nothing about this client against a daemon. Point"
-echo "gate: SAYFIRST_CONTRACT_SOURCE at a checkout of the control plane repository, and"
-echo "gate: this becomes the full gate."
+echo "gate: installed closure of articles 13 and 14, nothing about what installing"
+echo "gate: \`sayfirst\` brings, and — read the list above rather than this line — nothing"
+echo "gate: about this client against a daemon. Point SAYFIRST_CONTRACT_SOURCE at a"
+echo "gate: checkout of the control plane repository, and this becomes the full gate."
 exit "$GATE_REDUCED_GREEN"

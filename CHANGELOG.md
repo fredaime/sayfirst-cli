@@ -6,6 +6,18 @@ declares; a release with no section fails the gate.
 
 ## Unreleased
 
+## 0.3.3
+
+- A second distribution is built from this repository: `sayfirst`, the product
+  installed whole. It installs no code of its own. It depends on `sayfirst-cli`,
+  `sayfirst-control-plane` and `sayfirstd` at its own version and names their
+  three commands, so one install — `uv tool install sayfirst` — yields
+  `sayfirst`, `sayfirst-daemon` and `sayfirstd`. `sayfirst-cli` is still the
+  client alone: installing it still brings the contract and the boundary and
+  never the daemon.
+- The contract and the boundary move to 0.3.3, released with this client.
+  `sayfirst-cli` itself changes in its version and its pins only.
+
 ## 0.3.2
 
 - The contract and the boundary move to 0.3.2, which carries security fixes.

@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+[project]
+name = "sayfirst"
+version = "0.3.3"
+description = "The sayfirst control plane, its daemon and its command, installed whole"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = "Apache-2.0"
+authors = [{ name = "fredaime", email = "frederic.aime@gmail.com" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+# This distribution is the product installed whole, and it is not the client.
+# It depends on the client, on the daemon and on the daemon's operator surface,
+# each at this one version, and it installs no module of its own. The client's
+# own closure is untouched by it: `scripts/check_dependency_closure.py` still
+# installs `sayfirst-cli` alone and still reads three distributions (article
+# 14). What installing THIS distribution brings is measured the same way, by
+# `scripts/check_umbrella_install.py`.
+dependencies = [
+  "sayfirst-cli==0.3.3",
+  "sayfirst-control-plane==0.3.3",
+  "sayfirstd==0.3.3",
+]
+
+[project.urls]
+Repository = "https://github.com/fredaime/sayfirst-cli"
+Documentation = "https://github.com/fredaime/sayfirst-cli/blob/main/umbrella/README.md"
+Changelog = "https://github.com/fredaime/sayfirst-cli/blob/main/CHANGELOG.md"
+
+# Each entry mirrors the declaration of the distribution that owns the command,
+# word for word. An installer that exposes only the commands of the package it
+# was handed (`uv tool install`, `pipx install`) would otherwise expose none,
+# since this distribution has no code to point a command of its own at. The
+# mirror is measured on a real install, against what each owner declares, by
+# `scripts/check_umbrella_install.py`.
+[project.scripts]
+sayfirst = "sayfirst_cli.main:run"
+sayfirst-daemon = "sayfirst_quickstart.command:main"
+sayfirstd = "sayfirstd.main:run"
+
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+# No module is selected, on purpose: the wheel is its metadata and the two
+# notices. `tests/test_umbrella_ships_no_code.py` holds that.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.build.targets.sdist.force-include]
+"../LICENSE" = "LICENSE"
+"../NOTICE" = "NOTICE"
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"

@@ -63,6 +63,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 #: a notice rather than a work, which is the same exception article 15 makes.
 #: The changelog is one more: a release note is read by every person deciding
 #: whether to upgrade, and it is as published as `README.md`.
+#: The umbrella's directory is one more: its page and its project file are what
+#: the index shows for the product's own name, as published as `README.md`.
 #:
 #: WHAT IS READ OF EACH FILE UNDER THESE ROOTS, per suffix, because a root read
 #: in part is not a root read. Every detector in `EVERYWHERE` reads every one of
@@ -88,6 +90,7 @@ PUBLISHED_ROOTS = (
     "TRADEMARKS.md",
     "pyproject.toml",
     "CHANGELOG.md",
+    "umbrella",
 )
 
 #: Suffixes whose whole content is prose.

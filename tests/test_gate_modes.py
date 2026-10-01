@@ -218,7 +218,15 @@ def test_the_reduced_status_is_reached_by_exactly_one_path() -> None:
     """One `exit` writes it, at the end of the reduced run, after the count."""
     assert GATE_TEXT.count('exit "$GATE_REDUCED_GREEN"') == 1
     assert re.search(r"^gate: contract absent: ", GATE_TEXT, re.MULTILINE) is None
-    assert 'echo "gate: contract absent: $((checks_not_run + 1)) checks not run"' in GATE_TEXT
+    assert 'echo "gate: contract absent: $((checks_not_run + 2)) checks not run"' in GATE_TEXT
+    # Two named steps install the contract's side in order to measure something, and
+    # a reduced run names each: the count above is the tests that stood down, plus
+    # these two lines.
+    for step in (
+        "closure (articles 13 and 14) — it installs the contract to measure it",
+        "umbrella (the product installed whole) — it installs the daemon to measure it",
+    ):
+        assert f'echo "gate:   not run: {step}"' in GATE_TEXT, step
 
 
 def test_a_failure_can_never_be_read_as_a_reduced_run() -> None:
@@ -416,12 +424,12 @@ def test_every_check_the_workflow_runs_is_the_gate() -> None:
 
     One exception, stated in this file's header and held by the test below it:
     the sign-off check, which has no range to be given off a pull request. The
-    three names read for here are the tools `scripts/gate.sh` already runs, so a
+    four names read for here are the tools `scripts/gate.sh` already runs, so a
     step that ran any of them a second way — with different options, against a
     different tree — would be a check nobody could reproduce even though the
     gate appears to cover it.
     """
-    for tool in ("pytest", "ruff", "check_dependency_closure"):
+    for tool in ("pytest", "ruff", "check_dependency_closure", "check_umbrella_install"):
         assert tool not in WORKFLOW_CODE, f"the workflow runs {tool} itself"
 
 
