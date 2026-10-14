@@ -1,5 +1,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# `sayfirst` — ask before you act
+# SayFirst (`sayfirst`) — ask before you act
+
+**SayFirst is open-source runtime governance for AI agents: a local control
+plane a program asks before an effect, a person who approves what waits, and
+evidence anyone can verify offline.**
+
+[![PyPI - sayfirst](https://img.shields.io/pypi/v/sayfirst.svg?label=PyPI%20sayfirst)](https://pypi.org/project/sayfirst/)
+[![PyPI - sayfirst-cli](https://img.shields.io/pypi/v/sayfirst-cli.svg?label=PyPI%20sayfirst-cli)](https://pypi.org/project/sayfirst-cli/)
+[![PyPI - sayfirst-control-plane](https://img.shields.io/pypi/v/sayfirst-control-plane.svg?label=PyPI%20sayfirst-control-plane)](https://pypi.org/project/sayfirst-control-plane/)
+
+**Links:** [`sayfirst-cli` on GitHub](https://github.com/fredaime/sayfirst-cli) ·
+[`sayfirst-cli` on PyPI](https://pypi.org/project/sayfirst-cli/) ·
+[control plane on GitHub](https://github.com/fredaime/sayfirst-control-plane) ·
+[control plane on PyPI](https://pypi.org/project/sayfirst-control-plane/)
 
 This distribution is the product, installed whole. It installs no code of its
 own: it depends on the three distributions that carry the three commands, each

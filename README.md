@@ -1,5 +1,21 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# `sayfirst` — ask before you act
+# SayFirst CLI (`sayfirst-cli`) — ask before you act
+
+**`sayfirst-cli` is the open-source command line of the [SayFirst control plane
+(`sayfirst-control-plane`)](https://github.com/fredaime/sayfirst-control-plane):
+runtime governance for AI agents and the programs they drive.** A governed
+program asks a local daemon before an effect and does only what was allowed;
+`sayfirst` puts that question in front of a program that was never written for
+it, holds what waits for a person until one approves it, and exports evidence
+anyone can verify offline.
+
+[![PyPI - sayfirst-cli](https://img.shields.io/pypi/v/sayfirst-cli.svg?label=PyPI%20sayfirst-cli)](https://pypi.org/project/sayfirst-cli/)
+[![PyPI - sayfirst-control-plane](https://img.shields.io/pypi/v/sayfirst-control-plane.svg?label=PyPI%20sayfirst-control-plane)](https://pypi.org/project/sayfirst-control-plane/)
+
+**Links:** [`sayfirst-cli` on GitHub](https://github.com/fredaime/sayfirst-cli) ·
+[`sayfirst-cli` on PyPI](https://pypi.org/project/sayfirst-cli/) ·
+[control plane on GitHub](https://github.com/fredaime/sayfirst-control-plane) ·
+[control plane on PyPI](https://pypi.org/project/sayfirst-control-plane/)
 
 This repository is **the command**. `sayfirst` is the open-source product
 command-line interface of the `sayfirst` control plane: it asks the daemon

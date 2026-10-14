@@ -65,7 +65,8 @@ def test_every_url_of_the_umbrella_is_this_public_repository() -> None:
     client = project_urls(REPOSITORY)
     assert set(urls) == set(client), urls
     assert urls["Repository"] == client["Repository"] == PUBLIC_CLIENT
-    assert urls["Changelog"] == client["Changelog"]
+    for key in set(urls) - {"Documentation"}:
+        assert urls[key] == client[key], key
     page = urls["Documentation"].removeprefix(f"{PUBLIC_CLIENT}/blob/main/")
     assert page == "umbrella/README.md", urls["Documentation"]
     assert (REPOSITORY / page).is_file(), page

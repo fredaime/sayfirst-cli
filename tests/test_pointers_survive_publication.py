@@ -118,10 +118,40 @@ PUBLIC_CONTROL_PLANE = "https://github.com/fredaime/sayfirst-control-plane"
 PUBLIC_CLIENT = "https://github.com/fredaime/sayfirst-cli"
 
 
+#: The three URLs every page of this repository's distributions carries, each
+#: into this repository.
+OWN_URLS = frozenset({"Repository", "Documentation", "Changelog"})
+
+#: Every other URL a page here may carry, and the one address each may hold:
+#: this repository's issues, and the control plane the client asks — its
+#: repository and its page on the index. A closed table rather than a pattern,
+#: so a misspelt project name on the index, which would send a reader to a
+#: page anybody could register, is a failure here rather than a guess.
+CROSS_LINKS = {
+    "Issues": f"{PUBLIC_CLIENT}/issues",
+    "Control plane": PUBLIC_CONTROL_PLANE,
+    "Control plane on PyPI": "https://pypi.org/project/sayfirst-control-plane/",
+}
+
+
 def project_urls(root: Path) -> dict[str, str]:
     """The `[project.urls]` table of the distribution at `root`, or an empty one."""
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     return dict(project.get("urls") or {})
+
+
+def misdirected(urls: dict[str, str]) -> list[str]:
+    """Every entry of this table that sends a reader somewhere this module has not decided."""
+    found = [f"missing: {name}" for name in sorted(OWN_URLS - set(urls))]
+    for name, url in sorted(urls.items()):
+        if NEVER_PUBLISHED in url:
+            found.append(f"never published: {name} = {url}")
+        elif name in OWN_URLS:
+            if not url.startswith(PUBLIC_CLIENT):
+                found.append(f"outside this repository: {name} = {url}")
+        elif CROSS_LINKS.get(name) != url:
+            found.append(f"undecided: {name} = {url}")
+    return found
 
 
 def test_every_published_url_of_this_distribution_is_a_public_repository() -> None:
@@ -133,10 +163,20 @@ def test_every_published_url_of_this_distribution_is_a_public_repository() -> No
     module already refuses in `README.md` and `NOTICE`, made to a wider audience.
     """
     urls = project_urls(REPOSITORY)
-    assert set(urls) == {"Repository", "Documentation", "Changelog"}, urls
-    for name, url in urls.items():
-        assert url.startswith(PUBLIC_CLIENT), (name, url)
-        assert NEVER_PUBLISHED not in url, (name, url)
+    assert misdirected(urls) == [], urls
+    assert set(CROSS_LINKS) <= set(urls), urls
+
+
+def test_the_url_rule_fires_on_a_misspelt_page_of_the_index() -> None:
+    """WATCHED FIRING, on the cross-link that is easiest to get wrong: a project
+    name on the index that nobody here publishes."""
+    urls = {
+        **project_urls(REPOSITORY),
+        "Control plane on PyPI": "https://pypi.org/project/sayfirst-controlplane/",
+    }
+    assert misdirected(urls) == [
+        "undecided: Control plane on PyPI = https://pypi.org/project/sayfirst-controlplane/"
+    ]
 
 
 def test_the_url_rule_fires_on_a_pointer_to_the_repository_that_is_never_published(
@@ -156,3 +196,4 @@ def test_the_url_rule_fires_on_a_pointer_to_the_repository_that_is_never_publish
     assert urls, "the reader saw no table: the probe proves nothing"
     assert not all(url.startswith(PUBLIC_CLIENT) for url in urls.values())
     assert any(NEVER_PUBLISHED in url for url in urls.values())
+    assert f"never published: Repository = {urls['Repository']}" in misdirected(urls)
