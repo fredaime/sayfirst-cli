@@ -6,6 +6,13 @@ declares; a release with no section fails the gate.
 
 ## Unreleased
 
+- The index pages of `sayfirst-cli` and `sayfirst` say what the product is in
+  their first line, carry keywords and the classifiers that describe it (the
+  console, the audience, Linux and macOS, security), and link to the issues,
+  to the control plane's repository and to its page on the index. The pointer
+  guard holds each of those links to the one address decided for it. Both
+  READMEs open with the same summary and the same links.
+
 ## 0.3.3
 
 - A second distribution is built from this repository: `sayfirst`, the product

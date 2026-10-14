@@ -2,17 +2,37 @@
 [project]
 name = "sayfirst-cli"
 version = "0.3.3"
-description = "The product command-line interface of the sayfirst control plane"
+description = "SayFirst CLI (sayfirst-cli): ask the SayFirst control plane before an effect — govern AI agents and programs, approve what waits for a person, verify the evidence offline"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 license = "Apache-2.0"
 authors = [{ name = "fredaime", email = "frederic.aime@gmail.com" }]
+keywords = [
+  "sayfirst",
+  "sayfirst-cli",
+  "sayfirst-control-plane",
+  "ai-agents",
+  "agent-security",
+  "ai-security",
+  "llm-security",
+  "runtime-governance",
+  "policy-enforcement",
+  "human-in-the-loop",
+  "audit-trail",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: System :: Systems Administration",
 ]
 # Article 13 and article 14: the client depends on the contract distribution and
 # on nothing else this project publishes. The closure this line produces is what
@@ -26,13 +46,18 @@ dependencies = ["sayfirst-contract==0.3.3", "sayfirst-boundary==0.3.3"]
 # the act that published it (2026-09-17) under the names the operator chose for
 # that act. The guard
 # `tests/test_pointers_survive_publication.py` holds them, so a rename lands
-# here and there together or not at all. No licence classifier: the licence is
-# declared as an expression above, and an index refuses a distribution that
-# carries both.
+# here and there together or not at all. The last two send a reader to the
+# sibling the client asks — the control plane's repository and its page on the
+# index — and the same guard holds that they point there and nowhere else. No
+# licence classifier: the licence is declared as an expression above, and an
+# index refuses a distribution that carries both.
 [project.urls]
 Repository = "https://github.com/fredaime/sayfirst-cli"
 Documentation = "https://github.com/fredaime/sayfirst-cli/blob/main/README.md"
 Changelog = "https://github.com/fredaime/sayfirst-cli/blob/main/CHANGELOG.md"
+Issues = "https://github.com/fredaime/sayfirst-cli/issues"
+"Control plane" = "https://github.com/fredaime/sayfirst-control-plane"
+"Control plane on PyPI" = "https://pypi.org/project/sayfirst-control-plane/"
 
 [project.scripts]
 sayfirst = "sayfirst_cli.main:run"

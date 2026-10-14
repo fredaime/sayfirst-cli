@@ -2,17 +2,37 @@
 [project]
 name = "sayfirst"
 version = "0.3.3"
-description = "The sayfirst control plane, its daemon and its command, installed whole"
+description = "SayFirst, installed whole: the control plane, its daemon and its command — runtime governance for AI agents, asked before an effect"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 license = "Apache-2.0"
 authors = [{ name = "fredaime", email = "frederic.aime@gmail.com" }]
+keywords = [
+  "sayfirst",
+  "sayfirst-cli",
+  "sayfirst-control-plane",
+  "ai-agents",
+  "agent-security",
+  "ai-security",
+  "llm-security",
+  "runtime-governance",
+  "policy-enforcement",
+  "human-in-the-loop",
+  "audit-trail",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: System :: Systems Administration",
 ]
 # This distribution is the product installed whole, and it is not the client.
 # It depends on the client, on the daemon and on the daemon's operator surface,
@@ -31,6 +51,9 @@ dependencies = [
 Repository = "https://github.com/fredaime/sayfirst-cli"
 Documentation = "https://github.com/fredaime/sayfirst-cli/blob/main/umbrella/README.md"
 Changelog = "https://github.com/fredaime/sayfirst-cli/blob/main/CHANGELOG.md"
+Issues = "https://github.com/fredaime/sayfirst-cli/issues"
+"Control plane" = "https://github.com/fredaime/sayfirst-control-plane"
+"Control plane on PyPI" = "https://pypi.org/project/sayfirst-control-plane/"
 
 # Each entry mirrors the declaration of the distribution that owns the command,
 # word for word. An installer that exposes only the commands of the package it
