@@ -11,11 +11,16 @@ anyone can verify offline.
 
 [![PyPI - sayfirst-cli](https://img.shields.io/pypi/v/sayfirst-cli.svg?label=PyPI%20sayfirst-cli)](https://pypi.org/project/sayfirst-cli/)
 [![PyPI - sayfirst-control-plane](https://img.shields.io/pypi/v/sayfirst-control-plane.svg?label=PyPI%20sayfirst-control-plane)](https://pypi.org/project/sayfirst-control-plane/)
+[![gate](https://github.com/fredaime/sayfirst-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fredaime/sayfirst-cli/actions/workflows/ci.yml)
+[![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](https://github.com/fredaime/sayfirst-cli/blob/main/LICENSE)
+[![Python versions](https://img.shields.io/pypi/pyversions/sayfirst-cli.svg)](https://pypi.org/project/sayfirst-cli/)
 
 **Links:** [`sayfirst-cli` on GitHub](https://github.com/fredaime/sayfirst-cli) ·
 [`sayfirst-cli` on PyPI](https://pypi.org/project/sayfirst-cli/) ·
 [control plane on GitHub](https://github.com/fredaime/sayfirst-control-plane) ·
 [control plane on PyPI](https://pypi.org/project/sayfirst-control-plane/)
+
+[![A selection of the 0.3.3 quickstart, recorded: an allow, a denial, a suspension and its approval, the export with coverage unknown, and could not ask](https://raw.githubusercontent.com/fredaime/sayfirst-control-plane/main/docs/demo/sayfirst.gif)](https://github.com/fredaime/sayfirst-control-plane/tree/main/docs/demo)
 
 This repository is **the command**. `sayfirst` is the open-source product
 command-line interface of the `sayfirst` control plane: it asks the daemon
